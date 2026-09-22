@@ -21,6 +21,22 @@ import { makeRng } from '../core/rng.js';
 // no binary assets, and a synthesized IR lets the room change shape at runtime.
 
 const REV_SEED = 0x1ca11ca1;
+const NOISE_SEED = 0x0ff1ce5e;
+
+// One shared noise bed for the whole game. Every noise voice reads a random
+// window of this buffer instead of filling a fresh one, which is the
+// difference between a punch costing four nodes and a punch costing a malloc
+// plus eight thousand PRNG calls on the frame the hit lands.
+function makeNoiseBuffer(ctx, seconds = 2) {
+  const len = Math.max(1, Math.floor(ctx.sampleRate * seconds));
+  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  const r = makeRng(NOISE_SEED);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = r() * 2 - 1;
+  }
+  return buf;
+}
 
 // A small tiled bar: short pre-delay, dense early reflections off hard
 // surfaces, then a diffuse tail that loses its top end fast because bodies and
@@ -223,6 +239,34 @@ export class Mixer {
   }
 
   bus(name) { return this.buses[name] || this.buses.sfx; }
+
+  get now() { return this.ctx.currentTime; }
+
+  // Lazily built so a Mixer constructed before a user gesture costs nothing.
+  get noise() {
+    if (!this._noiseBuf) this._noiseBuf = makeNoiseBuffer(this.ctx, 2);
+    return this._noiseBuf;
+  }
+
+  // A one-shot voice reading a random window of the shared bed. The random
+  // offset is what stops twenty footsteps sounding like the same footstep.
+  noiseSource(rate = 1, loop = false) {
+    const s = this.ctx.createBufferSource();
+    s.buffer = this.noise;
+    s.playbackRate.value = rate;
+    s.loop = loop;
+    if (loop) { s.loopStart = 0; s.loopEnd = this.noise.duration; }
+    return s;
+  }
+
+  // Safe to call at any time. Browsers only honour it inside a gesture, and a
+  // rejected resume is not an error worth propagating to the game loop.
+  resume() {
+    if (this.ctx.state === 'suspended' && this.ctx.resume) {
+      return this.ctx.resume().catch(() => {});
+    }
+    return Promise.resolve();
+  }
 
   // 0..1. Muffled, swimmy and too loud, in that order of audibility.
   setDrunk(v) {

@@ -40,7 +40,7 @@ export class Impacts {
     S.r = 1; S.g = 0.97; S.b = 0.92;
     S.r2 = col ? col.r : 1.0; S.g2 = col ? col.g : 0.62; S.b2 = col ? col.b : 0.34;
     // Well above the bloom threshold, so the core blooms rather than the frame.
-    S.bright = 5.2 + power * 2.4;
+    S.bright = 2.6 + power * 1.0;
     sys.flash.spawn(S);
 
     // A second, wider and dimmer flash one tick behind gives the light a decay
@@ -48,12 +48,12 @@ export class Impacts {
     reset();
     S.x = px; S.y = py; S.z = pz;
     S.life = 0.26 + power * 0.1;
-    S.sizeA = 0.32 * power;
-    S.sizeB = 1.25 * power;
+    S.sizeA = 0.22 * power;
+    S.sizeB = 0.72 * power;
     S.r = col ? col.r : 1.0; S.g = col ? col.g : 0.55; S.b = col ? col.b : 0.30;
     S.r2 = 0.42; S.g2 = 0.16; S.b2 = 0.30;
     S.opacity = 0.75;
-    S.bright = 2.0 + power;
+    S.bright = 1.2 + power * 0.4;
     sys.flash.spawn(S);
 
     const n = Math.round((o.count ?? 9) * power);
@@ -84,26 +84,29 @@ export class Impacts {
 
     reset();
     S.x = px; S.y = py; S.z = pz;
-    S.life = 0.34 + power * 0.14;
-    S.sizeA = 0.12 * power;
-    S.sizeB = 2.4 * power;
+    // Earlier values ran to a five metre ring at full power, which with bloom
+    // on top filled the frame with a white donut and buried the knockout it
+    // was supposed to punctuate. A shockwave punctuates, it does not narrate.
+    S.life = 0.26 + power * 0.08;
+    S.sizeA = 0.10 * power;
+    S.sizeB = 0.85 + 0.55 * power;
     S.r = col ? col.r : 1.0; S.g = col ? col.g : 0.86; S.b = col ? col.b : 0.78;
     S.r2 = 0.6; S.g2 = 0.22; S.b2 = 0.42;
-    S.opacity = 0.85;
-    S.bright = 2.4 + power * 0.8;
+    S.opacity = 0.38;
+    S.bright = 0.95 + power * 0.22;
     sys.ringCam.spawn(S);
 
     const floorY = this.vfx.floorY ?? 0;
     if (py - floorY < 1.9) {
       reset();
       S.x = px; S.y = floorY + 0.02; S.z = pz;
-      S.life = 0.5 + power * 0.2;
-      S.sizeA = 0.2 * power;
-      S.sizeB = 3.4 * power;
+      S.life = 0.42 + power * 0.14;
+      S.sizeA = 0.16 * power;
+      S.sizeB = 1.1 + 0.75 * power;
       S.r = col ? col.r : 0.95; S.g = col ? col.g : 0.80; S.b = col ? col.b : 0.95;
       S.r2 = 0.35; S.g2 = 0.12; S.b2 = 0.5;
-      S.opacity = 0.55;
-      S.bright = 1.5 + power * 0.5;
+      S.opacity = 0.3;
+      S.bright = 0.8 + power * 0.18;
       sys.ringFloor.spawn(S);
     }
   }

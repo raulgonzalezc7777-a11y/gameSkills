@@ -163,3 +163,29 @@ export class LayerStack {
     return out;
   }
 }
+
+// Weighted accumulate for the locomotion blendspace: out += src * w across
+// every channel, IK slots included, because a blendspace owns its own targets.
+export function accumPose(out, src, w) {
+  if (w === 0) return out;
+  for (let i = 0; i < POSE_SIZE; i++) out[i] += src[i] * w;
+  return out;
+}
+
+// A kick needs the swinging leg as well as the torso, but must still leave the
+// support leg to the locomotion base underneath.
+export const MASK_KICK = mask({
+  hips: 0.7, spine: 0.85, chest: 1, neck: 0.9, head: 0.7,
+  shoulderL: 1, upperArmL: 1, forearmL: 1, handL: 1,
+  shoulderR: 1, upperArmR: 1, forearmR: 1, handR: 1,
+  thighR: 1, shinR: 1, footR: 1, thighL: 0.45, shinL: 0.45, footL: 0.45
+});
+
+// A hit reaction travels further down the body than a punch does: the knees
+// buckle a little even on a light flinch.
+export const MASK_HIT = mask({
+  hips: 0.85, spine: 1, chest: 1, neck: 1, head: 1,
+  shoulderL: 1, upperArmL: 1, forearmL: 1, handL: 1,
+  shoulderR: 1, upperArmR: 1, forearmR: 1, handR: 1,
+  thighL: 0.6, shinL: 0.6, footL: 0.35, thighR: 0.6, shinR: 0.6, footR: 0.35
+});

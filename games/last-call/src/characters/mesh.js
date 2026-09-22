@@ -96,6 +96,40 @@ export function loft(nodes, sides) {
   return nodes.map((n, i) => ringPoints(fr[i], n, sides));
 }
 
+// The v coordinate addRings will hand each ring. Exposed so a caller can ask
+// where a landmark lands in the atlas instead of guessing: painting an eyebrow
+// or dropping a cut on a cheekbone needs the exact answer.
+export function ringVs(rings, evenV) {
+  const nv = rings.length;
+  const vs = new Array(nv);
+  if (evenV) {
+    let total = 0;
+    vs[0] = 0;
+    for (let k = 1; k < nv; k++) {
+      total += rings[k][0].distanceTo(rings[k - 1][0]);
+      vs[k] = total;
+    }
+    for (let k = 0; k < nv; k++) vs[k] = total > 1e-6 ? vs[k] / total : k / (nv - 1);
+  } else {
+    for (let k = 0; k < nv; k++) vs[k] = k / (nv - 1);
+  }
+  return vs;
+}
+
+// uv of ring row 'k' (fractional allowed) at ring angle 'th'.
+export function uvAt(rings, rect, vs, k, th, closed = true) {
+  const nu = rings[0].length;
+  const cols = closed ? nu + 1 : nu;
+  const i = ((th + Math.PI) / (Math.PI * 2)) * nu;
+  const k0 = Math.max(0, Math.min(vs.length - 1, Math.floor(k)));
+  const k1 = Math.min(vs.length - 1, k0 + 1);
+  const vv = vs[k0] + (vs[k1] - vs[k0]) * (k - k0);
+  return [
+    rect[0] + (i / (cols - 1)) * (rect[2] - rect[0]),
+    rect[1] + vv * (rect[3] - rect[1])
+  ];
+}
+
 // -------------------------------------------------------- mesh builder ----
 
 export class MeshBuilder {
@@ -319,7 +353,12 @@ export function computeSkinning(geo, vertexGroups, groupBones, segments, boneInd
       if (d < nearestD) { nearestD = d; nearest = boneIndex[names[i]]; }
       if (d < s.r) {
         const f = 1 - d / s.r;
-        cand.push({ i: boneIndex[names[i]], w: f * f * f * f * (s.bias ?? 1) });
+        // The falloff exponent is per bone: a low power widens the blend band
+        // across a joint, which is what keeps an elbow from creasing, while a
+        // high power keeps a hand from grabbing weight off a nearby thigh.
+        const p = s.pow ?? 4;
+        const w = p === 4 ? f * f * f * f : p === 3 ? f * f * f : Math.pow(f, p);
+        cand.push({ i: boneIndex[names[i]], w: w * (s.bias ?? 1) });
       }
     }
     if (!cand.length) { si[v * 4] = nearest < 0 ? 0 : nearest; sw[v * 4] = 1; continue; }
