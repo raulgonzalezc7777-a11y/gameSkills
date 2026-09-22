@@ -4,7 +4,7 @@ import { rng as gRng, makeRng, hashString } from '../core/rng.js';
 // Procedural humanoid. Version 1: a bone hierarchy (THREE.Bone) with limb
 // meshes parented to bones. The CHARACTER owner upgrades this to a single
 // skinned mesh with smooth weights, authored skin/cloth materials and damage.
-// The `bones` contract below is frozen: animation code depends on these names.
+// The 'bones' contract below is frozen: animation code depends on these names.
 export const BONE_NAMES = [
   'hips', 'spine', 'chest', 'neck', 'head',
   'shoulderL', 'upperArmL', 'forearmL', 'handL',

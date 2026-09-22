@@ -95,7 +95,7 @@ uniform float uTime;
 uniform float uExcite;
 uniform float uSurge;
 
-// Rotation about the shoulder: `raise` lifts the arm out to the side, `swing`
+// Rotation about the shoulder: 'raise' lifts the arm out to the side, 'swing'
 // pumps it forward and back. Returned as a matrix so the normal pass can reuse
 // exactly the same transform as the position pass.
 mat3 crowdArmRot(float side, float raise, float swing) {
@@ -242,7 +242,7 @@ export class Crowd {
     ];
   }
 
-  // `beat` is the club's running beat phase in beats, shared with the lights so
+  // 'beat' is the club's running beat phase in beats, shared with the lights so
   // the room moves as one instrument.
   update(dt, t, beat, energy) {
     this.surge = expDamp(this.surge, 0, 1.3, dt);

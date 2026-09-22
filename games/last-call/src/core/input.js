@@ -1,7 +1,7 @@
 import { clamp } from './math.js';
 
 // Keyboard + mouse + gamepad folded into one intent struct. Gameplay code
-// never touches a key code; it reads `input.state`.
+// never touches a key code; it reads 'input.state'.
 const DEFAULT_BINDS = {
   forward: ['KeyW', 'ArrowUp'],
   back: ['KeyS', 'ArrowDown'],

@@ -6,8 +6,8 @@
 // Simulation lives entirely in the vertex shader. Each instance stores only its
 // spawn state (position, velocity, birth time, seed) and the motion is
 // evaluated in closed form from age, so the CPU never touches a particle again
-// after it is written once. That is what lets `emit` stay allocation free and
-// `update` stay O(systems) instead of O(particles).
+// after it is written once. That is what lets 'emit' stay allocation free and
+// 'update' stay O(systems) instead of O(particles).
 
 // Closed form ballistic with linear drag:
 //   v(t) = (v0 - g/k) e^(-kt) + g/k

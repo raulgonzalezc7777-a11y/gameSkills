@@ -10,7 +10,7 @@ const _v = new THREE.Vector3(), _w = new THREE.Vector3();
 
 export const PARTS = ['head', 'body', 'legs'];
 
-// Attack table. `reach` is metres from the chest, `startup`/`active` are frames
+// Attack table. 'reach' is metres from the chest, 'startup'/'active' are frames
 // of a 60 Hz budget expressed in seconds.
 export const ATTACKS = {
   jab:      { dmg: 6,  startup: 0.09, active: 0.07, recover: 0.16, reach: 1.30, stam: 6,  push: 1.4, part: 'head' },

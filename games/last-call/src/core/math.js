@@ -10,7 +10,7 @@ export const remap = (v, a, b, c, d) => lerp(c, d, clamp01(invLerp(a, b, v)));
 export const smoothstep = (t) => { t = clamp01(t); return t * t * (3 - 2 * t); };
 export const smootherstep = (t) => { t = clamp01(t); return t * t * t * (t * (t * 6 - 15) + 10); };
 
-// Framerate-independent exponential smoothing. `rate` is "how much of the gap
+// Framerate-independent exponential smoothing. 'rate' is "how much of the gap
 // is closed per second"; at 0.99 the value is essentially snapped.
 export const damp = (a, b, rate, dt) => lerp(a, b, 1 - Math.pow(1 - rate, dt * 60));
 export const expDamp = (a, b, lambda, dt) => b + (a - b) * Math.exp(-lambda * dt);
@@ -28,7 +28,7 @@ export const moveTowards = (a, b, maxDelta) => {
   return Math.abs(d) <= maxDelta ? b : a + Math.sign(d) * maxDelta;
 };
 
-// Critically damped spring. Returns the new value and mutates `state.v`.
+// Critically damped spring. Returns the new value and mutates 'state.v'.
 export function spring(current, target, state, stiffness, dt) {
   const damping = 2 * Math.sqrt(stiffness);
   const accel = (target - current) * stiffness - state.v * damping;

@@ -26,7 +26,7 @@ function makeTexture(cv, { repeat = 1, srgb = false, aniso = 8 } = {}) {
 // ---------------------------------------------------------------- noise ----
 
 // Classic value-noise lattice with smootherstep interpolation. Tileable,
-// because every lattice lookup wraps on `period`.
+// because every lattice lookup wraps on 'period'.
 export function valueNoise2D(seed = 1, period = 8) {
   const rng = makeRng(seed);
   const grid = new Float32Array(period * period);
@@ -93,7 +93,7 @@ export function paint(size, fn) {
 }
 
 // Derive a tangent-space normal map from a height callback via central
-// differences. `strength` scales the slope.
+// differences. 'strength' scales the slope.
 export function normalFromHeight(size, heightFn, strength = 2.0) {
   const e = 1 / size;
   return paint(size, (u, v) => {

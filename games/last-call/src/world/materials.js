@@ -126,7 +126,7 @@ function std(bundle, repeat, props) {
   return m;
 }
 
-// Every accessor is memoised, so `MAT.brass()` in five different prop builders
+// Every accessor is memoised, so 'MAT.brass()' in five different prop builders
 // still yields one material and one program.
 export const MAT = {
   brick: () => memo('m:brick', () => std(brickBundle(), 3.0, { color: 0xffffff, roughness: 1, metalness: 0 })),
@@ -179,7 +179,7 @@ export const MAT = {
     new THREE.MeshStandardMaterial({ color, roughness: 0.12, metalness: 0, emissive: color, emissiveIntensity: 0.18 })),
 
   // Emissive-only surface for neon tubes and light strips. Colour lives in
-  // `emissive` so the bloom pass has something above threshold to grab. Not
+  // 'emissive' so the bloom pass has something above threshold to grab. Not
   // memoised: each tube pulses on its own phase and needs its own material.
   neon: (color, intensity = 6) => new THREE.MeshStandardMaterial({
     color: 0x07070a, emissive: color, emissiveIntensity: intensity,

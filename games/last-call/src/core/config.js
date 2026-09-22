@@ -3,19 +3,19 @@
 export const CFG = {
   render: {
     targetFps: 60,
-    exposure: 1.05,
+    exposure: 1.32,
     shadowMapSize: 2048,
     maxPixelRatio: 2,
     anisotropy: 8,
     fogDensity: 0.021
   },
   post: {
-    bloom: { strength: 0.85, radius: 0.72, threshold: 0.78 },
+    bloom: { strength: 0.9, radius: 0.78, threshold: 1.05 },
     ssao: { radius: 0.55, intensity: 1.15, bias: 0.028 },
-    dof: { focusDistance: 6.0, aperture: 0.0022, maxBlur: 0.009 },
+    dof: { focusDistance: 5.0, aperture: 0.0022, maxBlur: 0.007, focusRange: 1.6, nearRange: 2.6, farRange: 16.0 },
     motionBlur: { strength: 0.62, samples: 12 },
     grain: 0.055,
-    vignette: 0.55,
+    vignette: 0.38,
     chromatic: 0.0021,
     grading: { lift: 0.012, gamma: 0.98, gain: 1.04, saturation: 1.12, temperature: 0.06 }
   },

@@ -6,7 +6,7 @@
 // nobody can tell which pass is lying.
 //
 // Everything here is ESSL 1.00 (texture2D / gl_FragColor) because Three
-// compiles ShaderMaterial without `glslVersion` as GLSL1, and WebGL2 accepts
+// compiles ShaderMaterial without 'glslVersion' as GLSL1, and WebGL2 accepts
 // ESSL1 shaders natively. No textureLod anywhere: ESSL1 would need
 // EXT_shader_texture_lod, and every mip in this stack is its own target.
 

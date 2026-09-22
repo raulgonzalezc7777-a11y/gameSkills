@@ -128,7 +128,7 @@ export const qslerp = (o, a, b, t) => {
   return qnormalize(o, qset(o, a.x * s0 + bx * s1, a.y * s0 + by * s1, a.z * s0 + bz * s1, a.w * s0 + bw * s1));
 };
 
-// Axis-angle of a rotation, written into `out`, magnitude = angle in radians.
+// Axis-angle of a rotation, written into 'out', magnitude = angle in radians.
 // Used by every PD controller and by the joint limit solver.
 export const qToScaledAxis = (out, q) => {
   let w = q.w, x = q.x, y = q.y, z = q.z;
@@ -143,7 +143,7 @@ export const qToScaledAxis = (out, q) => {
 /* ------------------------------------------------------------------- shapes */
 
 export const Sphere = (radius) => ({ type: 'sphere', radius });
-// Capsule runs along the body's local +Y, `halfHeight` is half the cylinder
+// Capsule runs along the body's local +Y, 'halfHeight' is half the cylinder
 // section, so total length is 2 * (halfHeight + radius).
 export const Capsule = (radius, halfHeight) => ({ type: 'capsule', radius, halfHeight });
 export const Box = (hx, hy, hz) => ({ type: 'box', hx, hy, hz });
