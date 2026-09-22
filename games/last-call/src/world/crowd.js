@@ -150,8 +150,12 @@ export class Crowd {
     this.beat = 0;
 
     const geo = buildBodyGeometry();
+    // The crowd is backlit background. Held at full albedo it blows out to
+    // white under the rim spots and competes with the fighters, which is the
+    // opposite of what a crowd is for: it should read as silhouette and colour
+    // mass, never as detail.
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xffffff, roughness: 0.86, metalness: 0.02, vertexColors: true
+      color: 0x6b6b72, roughness: 0.94, metalness: 0.0, vertexColors: true
     });
     this.uniforms = {
       uBeat: { value: 0 }, uTime: { value: 0 }, uExcite: { value: 0 }, uSurge: { value: 0 }

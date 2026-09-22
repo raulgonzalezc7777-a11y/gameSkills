@@ -16,6 +16,7 @@ const FLOOR_R = 5.7;          // the lit dance floor, which is also the fight ar
 const BEATS_PER_SEC = 126 / 60;
 
 const PINK = 0xff2a6d, CYAN = 0x05d9e8, GOLD = 0xf9c80e, VIOLET = 0x9d4edd;
+const TILE_BED = new THREE.Color(0x1b1424);
 
 export class Arena {
   constructor(ctx = {}) {
@@ -207,6 +208,9 @@ export class Arena {
       m.makeTranslation(slots[i][0], 0.015, slots[i][1]);
       tiles.setMatrixAt(i, m);
       c.setHex(palette[i % palette.length]);
+      // Pull the tiles toward the room's ambient so the floor is a lit pattern
+      // under the fight rather than a light box the fighters stand on.
+      c.lerp(TILE_BED, 0.34);
       tiles.setColorAt(i, c);
       this.tilePhase[i] = Math.hypot(slots[i][0], slots[i][1]) * 0.42;
     }
@@ -529,7 +533,7 @@ export class Arena {
     if (this.tiles) {
       const u = this.tiles.material.uniforms;
       u.uBeat.value = this.beat;
-      u.uIntensity.value = 1.6 + this.pulse * 2.6 + this.energy * 1.1;
+      u.uIntensity.value = 0.52 + this.pulse * 1.25 + this.energy * 0.45;
     }
     if (this.discoBall) this.discoBall.rotation.y += dt * 0.55;
     if (this.sign) {

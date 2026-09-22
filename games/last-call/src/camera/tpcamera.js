@@ -46,7 +46,7 @@ export class TPCamera {
     this.pitch = clamp(this.pitch + lookInput.y * dt * 1.6, -0.35, 0.5);
 
     // Pull back as the fighters separate so both always read.
-    const wantDist = clamp(CFG.camera.distance + sep * 0.42, 3.4, 8.2);
+    const wantDist = clamp(CFG.camera.distance + sep * 0.52, 3.9, 9.0);
     this.dist = expDamp(this.dist, wantDist, 4.5, dt);
     const wantFov = CFG.camera.fov + clamp(sep * 1.2, 0, 10);
     this.fov = expDamp(this.fov, wantFov, 5.0, dt);
@@ -57,6 +57,18 @@ export class TPCamera {
       _mid.y + CFG.camera.height * 0.55 + sinP * this.dist + 0.55,
       _mid.z + Math.cos(this.yaw) * cosP * this.dist
     );
+
+    // Over the shoulder. Sitting dead behind the player puts their back
+    // between the camera and the opponent, which is the one thing a fighting
+    // game camera must never do. The offset is perpendicular to the duel axis
+    // and eases with separation, so a clinch does not swing wide.
+    const shoulderSide = Math.cos(this.yaw), shoulderFwd = -Math.sin(this.yaw);
+    const shoulder = CFG.camera.shoulder * clamp(sep * 0.55, 0.45, 1.35);
+    _c.x += shoulderSide * shoulder;
+    _c.z += shoulderFwd * shoulder;
+    // Aim slightly past the midpoint toward the opponent so the frame has
+    // leading room rather than centring the player's spine.
+    _mid.lerp(_b, 0.18);
 
     // Keep the camera inside the venue.
     if (this.arena) {

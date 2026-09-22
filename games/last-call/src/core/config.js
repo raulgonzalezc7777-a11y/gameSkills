@@ -22,9 +22,9 @@ export const CFG = {
   camera: {
     fov: 48,
     fovSprint: 56,
-    distance: 4.35,
-    height: 1.62,
-    shoulder: 0.42,
+    distance: 4.5,
+    height: 1.58,
+    shoulder: 0.62,
     damping: 11.0,
     collisionRadius: 0.32
   },
