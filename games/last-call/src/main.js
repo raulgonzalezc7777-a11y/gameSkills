@@ -4,6 +4,7 @@ import { buildEnvironment } from './render/env.js';
 import { PostFX } from './render/postfx.js';
 import { Match } from './game/match.js';
 import { HUD } from './ui/hud.js';
+import { VFX, installVFXListeners } from './vfx/index.js';
 import { input } from './core/input.js';
 import { time } from './core/time.js';
 import { CFG, QUALITY_PRESETS } from './core/config.js';
@@ -44,6 +45,14 @@ const post = new PostFX(renderer, scene, camera, {
 });
 const hud = new HUD().mount(document.getElementById('ui-root'));
 
+// Effects listen to the event bus, so combat never calls them directly.
+const vfx = new VFX({ scene, camera, renderer, quality, floorY: match.arena.floorY });
+installVFXListeners(vfx);
+vfx.trackFighter(match.player);
+vfx.trackFighter(match.cpu);
+// Soft particles need the scene depth, which only the post stack owns.
+vfx.setDepthTexture(post.sceneRT.depthTexture, camera.near, camera.far);
+
 function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
@@ -80,6 +89,7 @@ function frame(nowMs) {
   const dt = time.tick(nowMs);
   input.update(time.rawDt);
   match.update(dt);
+  vfx.update(dt, camera.position);
   post.params.drunk = match.player.drunk01 * 0.85;
   renderer.info.reset();
   // ?nopost renders the lit scene straight to the screen. When a frame looks
@@ -101,4 +111,4 @@ function frame(nowMs) {
 requestAnimationFrame(frame);
 
 // Expose for the automated visual review harness and for debugging.
-window.__game = { scene, camera, renderer, match, post, hud, time, CFG, THREE };
+window.__game = { scene, camera, renderer, match, post, hud, vfx, time, CFG, THREE };
