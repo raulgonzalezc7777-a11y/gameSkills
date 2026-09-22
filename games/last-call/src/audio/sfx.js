@@ -50,7 +50,7 @@ export class SfxKit {
     // Voices retired lazily on the next play instead of on a timer, so a busy
     // combo never queues dozens of setTimeouts.
     this._live = [];
-    this._voiceCap = 42;
+    this._voiceCap = 72;
   }
 
   // Builds the per-voice tail of the graph: gain, stereo pan, bus. Returns the

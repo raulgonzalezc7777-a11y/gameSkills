@@ -34,6 +34,11 @@ const RAW = {
   bottleSmash:[ 14,  6, 24,  21.0, 15,  1.46, 4.0, 'launch', 'handR', 0.28, 0.17, 0.16, 'high', 'prop'],
   stoolSwing: [ 15,  7, 25,  22.0, 19,  1.78, 5.2, 'heavy',  'handR', 0.42, 0.20, 0.14, 'mid',  'prop'],
   stoolSlam:  [ 20,  8, 33,  28.0, 26,  1.62, 6.0, 'slam',   'handR', 0.40, 0.22, 0.00, 'high', 'prop'],
+  // Throws. 'active' is the release frame, the damage number is what the prop
+  // does when it connects downrange.
+  glassThrow: [  8,  2, 14,   9.0,  6,  9.00, 2.0, 'light',  'handR', 0.10, 0.09, 0.00, 'high', 'throw'],
+  bottleThrow:[  9,  2, 16,  13.0,  7, 11.00, 2.6, 'mid',    'handR', 0.10, 0.10, 0.00, 'high', 'throw'],
+  stoolThrow: [ 14,  3, 24,  19.0, 12,  9.00, 4.0, 'heavy',  'handR', 0.12, 0.12, 0.00, 'mid',  'throw'],
 
   // Borrachera beats. Scripted, so startup is short and they never whiff for
   // spacing reasons, only because the target is already on the floor.
@@ -180,7 +185,6 @@ export const TUNE = {
   propReach: 2.4,
   propThrowSpeed: 13.5,
   propRestock: 7.0,
-  propThrowDmg: { glass: 9, bottle: 13, stool: 19 },
   propHype: 6,
 
   // Borrachera

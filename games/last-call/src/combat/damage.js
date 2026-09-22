@@ -87,7 +87,7 @@ function parry(attacker, target, move, ctx) {
   target.chain.refresh();
   target.parryCount++;
   target.guard = Math.min(TUNE.guardMax, target.guard + 22);
-  bus.emit(EV.PARRY, { fighter: target, attacker, move, point: _pt.clone ? _pt : target.position });
+  bus.emit(EV.PARRY, { fighter: target, attacker, move, point: _pt });
   bus.emit(EV.HITSTOP, 0.12);
   bus.emit(EV.CAMERA_SHAKE, 0.45);
   bus.emit(EV.SFX, { name: 'parry', position: target.position });
