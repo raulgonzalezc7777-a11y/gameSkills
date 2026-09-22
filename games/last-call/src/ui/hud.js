@@ -16,6 +16,11 @@ export class HUD {
         </div>
         <div class="timer" id="timer">99</div>
         <div class="round" id="round">Round 1 of 3</div>
+        <div class="pips" id="pips"></div>
+        <div class="hype" id="hype">
+          <div class="hype-track"><div class="hype-fill" id="hype-fill"></div></div>
+          <div class="hype-label" id="hype-label">Crowd</div>
+        </div>
         <div class="combo" id="combo"><div class="n">0</div><div class="w">Hit combo</div></div>
         <div class="announce" id="announce"></div>
         <div class="hints">
@@ -40,11 +45,15 @@ export class HUD {
     this.els = {
       hud: $('hud'), timer: $('timer'), round: $('round'), combo: $('combo'),
       announce: $('announce'), title: $('title'), perf: $('perf'),
+      pips: $('pips'), hype: $('hype'), hypeFill: $('hype-fill'), hypeLabel: $('hype-label'),
       l: { hp: $('l-hp'), ghost: $('l-ghost'), st: $('l-st'), dk: $('l-dk'), name: $('l-name') },
       r: { hp: $('r-hp'), ghost: $('r-ghost'), st: $('r-st'), dk: $('r-dk'), name: $('r-name') }
     };
 
     bus.on(EV.COMBO, ({ count }) => this.showCombo(count));
+    bus.on(EV.UI_STATE, (p) => { if (p?.announce) this.announce(p.announce); });
+    bus.on(EV.PARRY, () => this.announce('Parry'));
+    bus.on(EV.MATCH_END, ({ winner }) => this.announce(winner === 0 ? 'You win' : 'You lose'));
     bus.on(EV.KO, () => this.announce('K.O.'));
     bus.on(EV.ROUND_START, ({ round }) => { this.els.round.textContent = `Round ${round} of 3`; this.announce('Fight'); });
     return this;
@@ -93,6 +102,29 @@ export class HUD {
       if (e.name.textContent !== f.name) e.name.textContent = f.name;
     }
     this.els.timer.textContent = String(Math.max(0, Math.ceil(s.clock))).padStart(2, '0');
+    this.els.timer.classList.toggle('urgent', s.clock <= 20);
+
+    // Crowd hype. Full means the Borrachera is available, which the label says
+    // in words because a bar that is merely full says nothing on its own.
+    const hype = clamp01((s.hype ?? 0) / 100);
+    if (this.els.hypeFill) this.els.hypeFill.style.transform = `scaleX(${hype})`;
+    const ready = hype >= 1;
+    if (this.els.hype) this.els.hype.classList.toggle('ready', ready);
+    if (this.els.hypeLabel) {
+      const want = ready ? 'Borrachera ready  F' : s.lastCall ? 'Last call' : 'Crowd';
+      if (this.els.hypeLabel.textContent !== want) this.els.hypeLabel.textContent = want;
+    }
+
+    if (this.els.pips && s.wins) {
+      const key = s.wins.join('/') + ':' + s.round;
+      if (this._pipKey !== key) {
+        this._pipKey = key;
+        this.els.pips.innerHTML = [0, 1].map((side) =>
+          `<span class="pipset ${side ? 'r' : 'l'}">` +
+          [0, 1].map((i) => `<i class="pip${s.wins[side] > i ? ' on' : ''}"></i>`).join('') +
+          '</span>').join('');
+      }
+    }
     if (s.fps !== undefined) this.els.perf.textContent = `${s.fps.toFixed(0)} FPS  ${s.tris ?? ''}`;
   }
 }

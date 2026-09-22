@@ -64,23 +64,25 @@ window.addEventListener('resize', onResize);
 onResize();
 
 let started = false;
-function start() {
+function start(fromGesture) {
   if (started) return;
   started = true;
   hud.start();
   match.begin();
-  // Pointer lock is a nice-to-have, and it throws outside a real user gesture,
-  // which is exactly the case in the automated capture runs.
-  try { input.requestLock(canvas); } catch { /* no gesture, keep playing */ }
+  // Pointer lock only ever succeeds inside a real user gesture. Asking for it
+  // anywhere else throws, which would pollute every automated capture log with
+  // an error that is not a bug.
+  if (fromGesture) input.requestLock(canvas);
 }
-document.getElementById('title').addEventListener('click', start);
-window.addEventListener('keydown', (e) => { if (e.code === 'Enter') start(); });
+document.getElementById('title').addEventListener('click', () => start(true));
+window.addEventListener('keydown', (e) => { if (e.code === 'Enter') start(true); });
 
 // The review harness and demo links boot straight into the fight.
 const qs = qsBoot;
 const noPost = qs.has('nopost');
-if (qs.has('auto')) setTimeout(start, 120);
+if (qs.has('auto')) setTimeout(() => start(false), 120);
 window.__start = start;
+canvas.addEventListener('click', () => input.requestLock(canvas));
 
 input.attach();
 
@@ -91,6 +93,7 @@ function frame(nowMs) {
   match.update(dt);
   vfx.update(dt, camera.position);
   post.params.drunk = match.player.drunk01 * 0.85;
+  post.params.focusDistance = match.focusDistance;
   renderer.info.reset();
   // ?nopost renders the lit scene straight to the screen. When a frame looks
   // wrong this is the first question: is the lighting broken, or the stack?
