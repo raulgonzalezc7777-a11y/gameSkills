@@ -60,6 +60,39 @@ const audio = new AudioEngine();
 installAudioListeners(audio);
 audio.setListener(camera);
 
+// Live quality. Everything the post stack does can be switched per frame, and
+// render resolution is the biggest lever of all, so a player on a laptop is
+// never stuck with a preset chosen for a desktop card.
+const QUALITY_ORDER = ['low', 'medium', 'high', 'cinematic'];
+let qualityName = QUALITY_PRESETS[qsBoot.get('q')] ? qsBoot.get('q') : 'high';
+const autoQuality = !qsBoot.has('q');
+
+function applyQuality(name) {
+  const q = QUALITY_PRESETS[name];
+  if (!q) return;
+  qualityName = name;
+  post.q.ssao = q.ssao && !off.has('ssao');
+  post.q.ssr = q.ssr && !off.has('ssr');
+  post.q.dof = q.dof && !off.has('dof');
+  post.q.motionBlur = q.motionBlur && !off.has('mb');
+  CFG.render.maxPixelRatio = q.pixelRatio ?? 1;
+  onResize();
+  hud.setQuality?.(name, autoQuality);
+}
+window.__setQuality = applyQuality;
+
+let autoPicked = autoQuality;
+hud.onQualityPick((q) => {
+  // 'auto' keeps the step-down watchdog on; a manual pick turns it off, since
+  // the player has just told us what they want.
+  autoPicked = q === 'auto';
+  applyQualityFromMenu(q === 'auto' ? 'high' : q);
+});
+function applyQualityFromMenu(name) {
+  applyQuality(name);
+  hud.setQuality(name, autoPicked);
+}
+
 function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
@@ -69,8 +102,10 @@ function onResize() {
 }
 window.addEventListener('resize', onResize);
 onResize();
+applyQuality(qualityName);
 
 let started = false;
+let autoAcc = 0, autoFrames = 0;
 function start(fromGesture) {
   if (started) return;
   started = true;
@@ -79,7 +114,9 @@ function start(fromGesture) {
   // Pointer lock only ever succeeds inside a real user gesture. Asking for it
   // anywhere else throws, which would pollute every automated capture log with
   // an error that is not a bug.
-  if (fromGesture) input.requestLock(canvas);
+  // Inside a sandboxed iframe pointer lock can be refused; the game is fully
+  // playable on the keyboard without it, so a refusal is not an error.
+  if (fromGesture) Promise.resolve().then(() => input.requestLock(canvas)).catch(() => {});
   // Audio only exists once a real gesture has happened. An automated capture
   // run stays silent, which is exactly what it wants.
   if (fromGesture) audio.init().then(() => audio.music.start()).catch(() => {});
@@ -92,7 +129,7 @@ const qs = qsBoot;
 const noPost = qs.has('nopost');
 if (qs.has('auto')) setTimeout(() => start(false), 120);
 window.__start = start;
-canvas.addEventListener('click', () => input.requestLock(canvas));
+canvas.addEventListener('click', () => { try { const r = canvas.requestPointerLock?.(); r?.catch?.(() => {}); } catch { /* no lock available */ } });
 
 input.attach();
 
@@ -140,6 +177,20 @@ function frame(nowMs) {
   }
   hud.update(dt, { ...match.hudState(), fps: time.fps, tris: renderer.info.render.triangles + ' tris' });
   input.lateUpdate();
+  // Automatic quality: after the fight starts, if the machine cannot hold a
+  // playable frame rate, step down a preset and measure again. It only ever
+  // steps down, so it cannot oscillate, and it never runs when the URL chose
+  // a preset explicitly, which is how the capture harness stays deterministic.
+  if (autoQuality && autoPicked && started) {
+    autoAcc += time.rawDt; autoFrames++;
+    if (autoAcc >= 3.5) {
+      const fps = autoFrames / autoAcc;
+      autoAcc = 0; autoFrames = 0;
+      const i = QUALITY_ORDER.indexOf(qualityName);
+      if (fps < 38 && i > 0) applyQuality(QUALITY_ORDER[i - 1]);
+    }
+  }
+
   // Review harness hook: the screenshot tool waits on this.
   window.__frameCount = (window.__frameCount || 0) + 1;
   window.__ready = window.__frameCount > 20;

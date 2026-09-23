@@ -41,12 +41,30 @@ export class HUD {
           <h1>LAST CALL</h1>
           <div class="sub">Closing time brawl</div>
           <div class="cta">Click to fight</div>
+          <div class="quality" id="quality">
+            <span class="qlabel">Quality</span>
+            <button data-q="auto" class="on">Auto</button>
+            <button data-q="low">Low</button>
+            <button data-q="medium">Medium</button>
+            <button data-q="high">High</button>
+            <button data-q="cinematic">Cinematic</button>
+          </div>
+          <div class="controls">
+            <span><i class="key">WASD</i>Move</span><span><i class="key">Shift</i>Sprint</span>
+            <span><i class="key">J</i>Jab</span><span><i class="key">K</i>Cross</span>
+            <span><i class="key">U</i>Hook</span><span><i class="key">I</i>Uppercut</span>
+            <span><i class="key">L</i>Kick</span><span><i class="key">Space</i>Block</span>
+            <span><i class="key">C</i>Dodge</span><span><i class="key">G</i>Grab</span>
+            <span><i class="key">E</i>Drink</span><span><i class="key">F</i>Borrachera</span>
+          </div>
         </div>
-      </div>`;
+      </div>
+      <div class="toast" id="toast"></div>`;
     const $ = (id) => root.querySelector('#' + id);
     this.els = {
       hud: $('hud'), timer: $('timer'), round: $('round'), combo: $('combo'),
       announce: $('announce'), title: $('title'), perf: $('perf'),
+      toast: $('toast'), quality: $('quality'),
       pips: $('pips'), hype: $('hype'), hypeFill: $('hype-fill'), hypeLabel: $('hype-label'),
       l: { hp: $('l-hp'), ghost: $('l-ghost'), st: $('l-st'), dk: $('l-dk'), name: $('l-name') },
       r: { hp: $('r-hp'), ghost: $('r-ghost'), st: $('r-st'), dk: $('r-dk'), name: $('r-name') }
@@ -69,6 +87,33 @@ export class HUD {
       <div class="track small"><div class="fill dk" id="${id}-dk"></div></div>
       <div class="label">Stamina / Buzz</div>
     </div>`;
+  }
+
+  // Quality buttons live on the title card. They must not start the fight,
+  // which the card itself does on click, so they stop the event here.
+  onQualityPick(cb) {
+    this.els.quality?.querySelectorAll('button').forEach((b) => {
+      b.addEventListener('click', (e) => { e.stopPropagation(); cb(b.dataset.q); });
+    });
+  }
+
+  setQuality(name, auto) {
+    this.els.quality?.querySelectorAll('button').forEach((b) => {
+      b.classList.toggle('on', auto ? b.dataset.q === 'auto' : b.dataset.q === name);
+    });
+    if (this._qualityShown && this._qualityShown !== name && auto) {
+      this.toast(`Quality lowered to ${name} to keep the frame rate up`);
+    }
+    this._qualityShown = name;
+  }
+
+  toast(text) {
+    const t = this.els.toast;
+    if (!t) return;
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
   }
 
   start() {

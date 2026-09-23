@@ -59,8 +59,10 @@ export const CFG = {
 };
 
 export const QUALITY_PRESETS = {
-  cinematic: { shadowMapSize: 4096, ssao: true, ssr: true, motionBlur: true, dof: true, particleBudget: 20000, crowd: 160 },
-  high:      { shadowMapSize: 2048, ssao: true, ssr: true, motionBlur: true, dof: true, particleBudget: 12000, crowd: 190 },
-  medium:    { shadowMapSize: 1024, ssao: true, ssr: true, motionBlur: false, dof: true, particleBudget: 6000, crowd: 120 },
-  low:       { shadowMapSize: 512,  ssao: false, ssr: false, motionBlur: false, dof: false, particleBudget: 2500, crowd: 24 }
+  // pixelRatio caps the render resolution relative to the screen, which is the
+  // single biggest lever on cost: the post stack is a dozen fullscreen passes.
+  cinematic: { pixelRatio: 2, shadowMapSize: 4096, ssao: true, ssr: true, motionBlur: true, dof: true, particleBudget: 20000, crowd: 160 },
+  high:      { pixelRatio: 1.5, shadowMapSize: 2048, ssao: true, ssr: true, motionBlur: true, dof: true, particleBudget: 12000, crowd: 190 },
+  medium:    { pixelRatio: 1, shadowMapSize: 1024, ssao: true, ssr: true, motionBlur: false, dof: true, particleBudget: 6000, crowd: 120 },
+  low:       { pixelRatio: 0.75, shadowMapSize: 512,  ssao: false, ssr: false, motionBlur: false, dof: false, particleBudget: 2500, crowd: 24 }
 };

@@ -126,3 +126,21 @@ html,body{margin:0;height:100%;background:#05060a;overflow:hidden;
 body.capture .perf,body.capture .hints{display:none}
 .hints{transition:opacity .8s ease}
 .hints.faded{opacity:0}
+
+/* Title card: quality picker and the full control sheet. */
+.quality{margin-top:34px;display:flex;gap:8px;justify-content:center;align-items:center;
+  pointer-events:auto;flex-wrap:wrap}
+.quality .qlabel{font-size:12px;letter-spacing:.3em;opacity:.55;text-transform:uppercase;margin-right:6px}
+.quality button{font:600 14px 'Barlow Condensed',sans-serif;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--paper);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.22);
+  border-radius:4px;padding:6px 13px;cursor:pointer;transition:all .18s ease}
+.quality button:hover{background:rgba(255,255,255,.14)}
+.quality button.on{background:var(--hot);border-color:var(--hot);color:#fff;
+  box-shadow:0 0 18px rgba(255,42,109,.45)}
+.controls{margin-top:26px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px 18px;
+  max-width:760px;font-size:13px;letter-spacing:.08em;opacity:.7;text-transform:uppercase}
+.toast{position:absolute;bottom:92px;left:50%;transform:translate(-50%,8px);opacity:0;
+  padding:8px 16px;border-radius:5px;background:rgba(6,8,14,.82);border:1px solid rgba(255,255,255,.16);
+  font-size:13px;letter-spacing:.1em;transition:all .35s ease;pointer-events:none}
+.toast.show{opacity:.92;transform:translate(-50%,0)}
+@media (max-width:720px){.controls{font-size:11px;gap:8px 12px}.quality button{padding:5px 9px}}

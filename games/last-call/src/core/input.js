@@ -78,7 +78,9 @@ class Input {
     return this;
   }
 
-  requestLock(el) { el?.requestPointerLock?.(); }
+  requestLock(el) {
+    try { const r = el?.requestPointerLock?.(); r?.catch?.(() => {}); } catch { /* refused */ }
+  }
 
   actionFor(code) {
     for (const [action, codes] of Object.entries(this.binds)) {
