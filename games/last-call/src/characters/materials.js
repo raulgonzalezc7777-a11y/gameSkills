@@ -1,21 +1,20 @@
 import * as THREE from 'three';
-import { TEX } from '../render/texlib.js';
+import { fbm2D, valueNoise2D } from '../render/texlib.js';
+import { makeRng } from '../core/rng.js';
 
-// Fighter surfacing. Every map comes out of the procedural foundry in
-// render/texlib.js; this module only decides how a fighter wears them.
+// Fighter surfacing. Every map is painted here at boot from noise; the
+// foundry in render/texlib.js only supplies the noise functions.
 //
-// Two things here are not stock Three.js. Skin gets an onBeforeCompile pass
-// that adds a fresnel subsurface term (a face lit only from behind still reads
-// as flesh rather than as a silhouette) and a 'uSweat' uniform that drops
-// roughness and raises specular where a body actually sweats. Cloth gets a
-// physical sheen lobe, which is the cheap stand-in for the fibre backscatter
-// that separates a cotton vest from painted plastic.
+// Skin is the part that decides whether a fighter reads as a person or as a
+// painted statue, so it gets its own lighting model on top of the standard
+// one (see SKIN_DIRECT). Cloth gets fabric maps whose finest detail is kept
+// well above the texel pitch: a weave near Nyquist is what used to crawl as
+// moire stripes across the vest at gameplay distance.
 
 // Skin UV atlas. Every skin vertex lands in one of these rects, which is what
 // lets damage.js paint a cut on a cheekbone without touching a calf.
 // The head takes the full width of the upper half because u runs all the way
-// around a ring: the face is only a third of that circumference, so anything
-// narrower leaves an eye a dozen pixels wide.
+// around the skull; the head grid then spends most of that width on the face.
 export const SKIN_ATLAS = {
   head: [0.010, 0.515, 0.990, 0.990],
   body: [0.010, 0.010, 0.300, 0.500],
@@ -26,164 +25,452 @@ export const SKIN_ATLAS = {
   spare: [0.810, 0.010, 0.990, 0.500]
 };
 
-// Declared once and shared by every skin material, so the program cache sees a
-// single variant no matter how many fighters exist.
-const SKIN_PARS = [
-  'uniform float uSweat;',
-  'uniform vec3 uSSSColor;',
-  'uniform float uSSSIntensity;',
-  'uniform float uSSSPower;',
+const cache = new Map();
+const memo = (key, fn) => { if (!cache.has(key)) cache.set(key, fn()); return cache.get(key); };
+
+function canvas(w, h = w) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return { c, ctx: c.getContext('2d') };
+}
+
+function fill(w, h, fn) {
+  const { c, ctx } = canvas(w, h);
+  const img = ctx.createImageData(w, h);
+  const d = img.data;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const col = fn(x / w, y / h, x, y);
+      d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = col[3] ?? 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+// Tangent space normals from a height field sampled on a wrapped grid.
+function normalCanvas(w, h, H, strength) {
+  return fill(w, h, (u, v, x, y) => {
+    const xl = (x - 1 + w) % w, xr = (x + 1) % w, yu = (y - 1 + h) % h, yd = (y + 1) % h;
+    const nx = (H[y * w + xl] - H[y * w + xr]) * strength;
+    const ny = (H[yd * w + x] - H[yu * w + x]) * strength;
+    const l = Math.hypot(nx, ny, 1);
+    return [(nx / l * 0.5 + 0.5) * 255, (ny / l * 0.5 + 0.5) * 255, (1 / l * 0.5 + 0.5) * 255];
+  });
+}
+
+function tex(c, { srgb = false, repeat = [1, 1], wrap = true } = {}) {
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.wrapS = t.wrapT = wrap ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+  t.repeat.set(repeat[0], repeat[1]);
+  t.anisotropy = 8;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
+
+const rgbOf = (hex) => { const c = new THREE.Color(hex); return [c.r * 255, c.g * 255, c.b * 255]; };
+
+// ------------------------------------------------------------------ skin ----
+
+// The per-fighter albedo canvas. Base tone with two scales of mottling: broad
+// patches of redder and sallower skin, and a fine grain that stops a flat area
+// from reading as paint. Contrast is deliberately low: real skin is far more
+// uniform than a noise texture wants to be, and the saturation of the roster
+// colour is kept rather than washed toward grey.
+export function makeSkinCanvas(tone, seed, size = 1024) {
+  const base = rgbOf(tone);
+  const lum = (base[0] * 0.3 + base[1] * 0.59 + base[2] * 0.11) / 255;
+  const broad = fbm2D(seed * 13 + 1, 4, 5, 0.55);
+  const red = fbm2D(seed * 13 + 7, 3, 4, 0.5);
+  const grain = fbm2D(seed * 13 + 3, 3, 48, 0.5);
+  // Darker skin carries less visible redness and more sheen variation; pale
+  // skin shows the blood under it.
+  const redAmt = 0.10 + 0.14 * lum;
+  const varCanvas = fill(256, 256, (u, v) => {
+    const b = (broad(u, v) - 0.5) * 0.11;
+    const r = Math.max(0, red(u, v) - 0.48) * 2 * redAmt;
+    return [
+      base[0] * (1 + b) * (1 + r * 0.25),
+      base[1] * (1 + b) * (1 - r * 0.55),
+      base[2] * (1 + b) * (1 - r * 0.45)
+    ];
+  });
+  const grainCanvas = fill(256, 256, (u, v) => {
+    const g = 128 + (grain(u, v) - 0.5) * 90;
+    return [g, g, g];
+  });
+  const { c, ctx } = canvas(size);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(varCanvas, 0, 0, size, size);
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = 0.22;
+  for (let y = 0; y < size; y += 256) for (let x = 0; x < size; x += 256) ctx.drawImage(grainCanvas, x, y);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  return { canvas: c, ctx, size };
+}
+
+// Fine surface detail shared by every fighter: pore dimples and cross-hatched
+// micro creases in the normal, and a slow roughness drift so a highlight
+// breaks up across a shoulder instead of sliding over it like on a mannequin.
+function skinDetail() {
+  return memo('skin-detail', () => {
+    const N = 512;
+    const pore = valueNoise2D(71, 96);
+    const crease = fbm2D(73, 3, 24, 0.5);
+    const fine = fbm2D(79, 2, 128, 0.5);
+    const H = new Float32Array(N * N);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const u = x / N, v = y / N;
+      const p = pore(u, v);
+      const cr = Math.abs(crease(u, v) - 0.5);
+      H[y * N + x] = -Math.pow(Math.max(0, p - 0.62) * 2.6, 2) * 0.8 + cr * 0.5 + fine(u, v) * 0.35;
+    }
+    const normal = normalCanvas(N, N, H, 1.6);
+    const drift = fbm2D(83, 3, 3, 0.6);
+    const orm = fill(256, 256, (u, v) => [255, (0.84 + drift(u, v) * 0.16) * 255, 0]);
+    return { normal, orm };
+  });
+}
+
+// Pieces of shader, joined into the standard program by onBeforeCompile.
+const SKIN_VERT_PARS = [
+  'attribute vec2 aux;',
   'varying float vWetZone;',
-  'float wetMask;'
+  'varying vec2 vAux;'
 ].join('\n');
 
-const SKIN_WET = [
-  '#include <roughnessmap_fragment>',
-  'wetMask = uSweat * vWetZone;',
-  '#ifdef USE_ROUGHNESSMAP',
-  '  wetMask *= 0.45 + 0.55 * texture2D( roughnessMap, vRoughnessMapUv ).g * 2.0;',
-  '#endif',
-  'wetMask = clamp( wetMask, 0.0, 1.0 );',
-  'roughnessFactor = mix( roughnessFactor, 0.085, wetMask );'
-].join('\n');
-
-// Wet skin is darker and far more specular. Both halves matter: raising gloss
-// alone gives a plastic doll, darkening alone gives dirt.
-const SKIN_SPEC = [
-  '#include <lights_physical_fragment>',
-  'material.specularColor = mix( material.specularColor, vec3( 0.20 ), wetMask );',
-  'material.diffuseColor *= mix( 1.0, 0.78, wetMask );'
-].join('\n');
-
-const SKIN_SSS = [
-  '#include <lights_fragment_end>',
-  'float ndv = clamp( dot( normalize( normal ), normalize( vViewPosition ) ), 0.0, 1.0 );',
-  'float fres = pow( 1.0 - ndv, uSSSPower );',
-  'reflectedLight.indirectDiffuse += uSSSColor * ( fres * uSSSIntensity ) * diffuseColor.rgb;'
-].join('\n');
-
-const SKIN_ZONE = [
+const SKIN_VERT = [
   '#include <begin_vertex>',
+  'vAux = aux;',
   'vWetZone = clamp( smoothstep( 0.50, 1.40, position.y ) * 0.80',
   '  + smoothstep( 1.74, 1.86, position.y ) * 0.55, 0.0, 1.0 );'
 ].join('\n');
 
-function cloneTex(t, repeat) {
-  const c = t.clone();
-  c.wrapS = c.wrapT = THREE.RepeatWrapping;
-  c.repeat.set(repeat, repeat);
-  c.needsUpdate = true;
-  return c;
-}
+const SKIN_FRAG_PARS = [
+  'uniform float uSweat;',
+  'uniform vec3 uSSSColor;',
+  'uniform float uSSSIntensity;',
+  'uniform vec3 uWrap;',
+  'varying float vWetZone;',
+  'varying vec2 vAux;',
+  'float wetMask;'
+].join('\n');
 
-// Copy the foundry's tileable skin canvas into a per-fighter canvas at a
-// higher resolution. The base is smooth blotch noise so the upscale costs
-// nothing visually, and the extra pixels are what make a painted cut or a
-// tattoo crisp instead of mushy.
-export function makeSkinCanvas(bundle, size) {
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const ctx = c.getContext('2d', { willReadFrequently: false });
-  ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(bundle.map.image, 0, 0, size, size);
-  return { canvas: c, ctx, size };
-}
+// Skin is lit through, not off. Three cheap terms stand in for scattering:
+// per channel wrap lighting, so red light reaches past the terminator further
+// than green and blue and the shadow edge goes warm instead of grey; a back
+// light term on thin parts (ears, nostril wings) weighted by aux.x; and a
+// shallow red lift in the indirect light. None of them adds energy on a face
+// lit straight on, which is where plastic comes from.
+const SKIN_DIRECT = [
+  '#include <lights_physical_pars_fragment>',
+  'void RE_Direct_Skin( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {',
+  '  float ndl = dot( geometryNormal, directLight.direction );',
+  '  float dotNL = saturate( ndl );',
+  '  vec3 irradiance = dotNL * directLight.color;',
+  '  reflectedLight.directSpecular += irradiance * BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, material ) * material.multiScatteringCompensation;',
+  '  vec3 wrapNL = pow( saturate( ( vec3( ndl ) + uWrap ) / ( 1.0 + uWrap ) ), vec3( 1.0 ) + uWrap );',
+  '  vec3 halfDir = normalize( directLight.direction + geometryViewDir );',
+  '  vec3 F = F_Schlick( material.specularColor, material.specularF90, saturate( dot( geometryViewDir, halfDir ) ) );',
+  '  reflectedLight.directDiffuse += wrapNL * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );',
+  '  float back = pow( saturate( dot( geometryViewDir, - directLight.direction ) ), 3.0 ) * vAux.x;',
+  '  reflectedLight.directDiffuse += directLight.color * uSSSColor * material.diffuseContribution * back * 0.55;',
+  '}',
+  '#undef RE_Direct',
+  '#define RE_Direct RE_Direct_Skin'
+].join('\n');
 
-export function makeSkinMaterial(skinTexture, bundle, opts = {}) {
+// Oily zones (forehead, nose, shoulders) are a little glossier, and sweat
+// pushes everything toward wet. Both only move roughness; the albedo keeps its
+// colour because oil does not change what colour skin is.
+const SKIN_ROUGH = [
+  '#include <roughnessmap_fragment>',
+  'roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.66, vAux.y );',
+  'wetMask = uSweat * max( vWetZone, vAux.y );',
+  '#ifdef USE_ROUGHNESSMAP',
+  '  wetMask *= 0.55 + 0.45 * texture2D( roughnessMap, vRoughnessMapUv ).g;',
+  '#endif',
+  'wetMask = clamp( wetMask, 0.0, 1.0 );',
+  'roughnessFactor = mix( roughnessFactor, 0.16, wetMask );'
+].join('\n');
+
+// Skin F0 is about 0.028, a touch under the standard dielectric 0.04. Wet skin
+// darkens because water fills the micro relief that scattered light back out.
+// The standard program feeds diffuseContribution, not diffuseColor, to the
+// lighting, so that is the one that has to be darkened.
+const SKIN_SPEC = [
+  '#include <lights_physical_fragment>',
+  'material.specularColor = vec3( mix( 0.028, 0.045, wetMask ) );',
+  'material.specularColorBlended = material.specularColor;',
+  'material.diffuseContribution *= mix( 1.0, 0.80, wetMask );'
+].join('\n');
+
+const SKIN_INDIRECT = [
+  '#include <lights_fragment_end>',
+  'float skinNdv = saturate( dot( normal, geometryViewDir ) );',
+  'reflectedLight.indirectDiffuse *= vec3( 1.05, 0.985, 0.965 );',
+  'reflectedLight.indirectDiffuse += uSSSColor * ( pow( 1.0 - skinNdv, 3.0 ) * uSSSIntensity ) * material.diffuseContribution;'
+].join('\n');
+
+export function makeSkinMaterial(skinTexture, opts = {}) {
+  const det = skinDetail();
+  const rep = opts.poreRepeat ?? 10;
   const mat = new THREE.MeshStandardMaterial({
     map: skinTexture,
-    normalMap: cloneTex(bundle.normal, opts.poreRepeat ?? 4),
-    roughnessMap: cloneTex(bundle.orm, opts.poreRepeat ?? 4),
-    roughness: 1.0,
+    normalMap: tex(det.normal, { repeat: [rep, rep] }),
+    roughnessMap: tex(det.orm, { repeat: [3, 3] }),
+    roughness: opts.roughness ?? 0.60,
     metalness: 0.0,
-    envMapIntensity: opts.envMapIntensity ?? 1.0
+    envMapIntensity: opts.envMapIntensity ?? 0.9
   });
-  mat.normalScale.set(0.85, 0.85);
+  mat.normalScale.set(0.32, 0.32);
   mat.name = 'skin';
   mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uSweat = { value: 0 };
+    shader.uniforms.uSweat = { value: mat.userData.sweat ?? 0 };
     shader.uniforms.uSSSColor = { value: new THREE.Color(opts.sss ?? '#b8442a') };
-    shader.uniforms.uSSSIntensity = { value: opts.sssIntensity ?? 0.30 };
-    shader.uniforms.uSSSPower = { value: opts.sssPower ?? 3.2 };
+    shader.uniforms.uSSSIntensity = { value: opts.sssIntensity ?? 0.22 };
+    shader.uniforms.uWrap = { value: new THREE.Vector3(0.52, 0.24, 0.16) };
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vWetZone;')
-      .replace('#include <begin_vertex>', SKIN_ZONE);
+      .replace('#include <common>', '#include <common>\n' + SKIN_VERT_PARS)
+      .replace('#include <begin_vertex>', SKIN_VERT);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + SKIN_PARS)
-      .replace('#include <roughnessmap_fragment>', SKIN_WET)
+      .replace('#include <common>', '#include <common>\n' + SKIN_FRAG_PARS)
+      .replace('#include <lights_physical_pars_fragment>', SKIN_DIRECT)
+      .replace('#include <roughnessmap_fragment>', SKIN_ROUGH)
       .replace('#include <lights_physical_fragment>', SKIN_SPEC)
-      .replace('#include <lights_fragment_end>', SKIN_SSS);
+      .replace('#include <lights_fragment_end>', SKIN_INDIRECT);
     mat.userData.shader = shader;
   };
-  mat.customProgramCacheKey = () => 'fighter-skin-v1';
+  mat.customProgramCacheKey = () => 'fighter-skin-v2';
   return mat;
 }
 
-// Cotton, denim and canvas all come from the same weave generator; the weave
-// count and the sheen lobe are what tell them apart.
+// ----------------------------------------------------------------- cloth ----
+
+// Fabric maps by kind. The finest repeating structure in any of them is eight
+// texels or more across, so mipmapping resolves it to a flat tone at distance
+// instead of beating against the screen grid.
+//   jersey  knit cotton: soft vertical wales, slub noise, matte
+//   satin   fight shorts: near flat, faint crinkle, glossy with a sheen lobe
+//   rib     elastic waistband: strong vertical ribs
+//   wrap    hand tape: overlapping diagonal passes with raised edges
+//   knit    sneaker upper
+function fabricBundle(color, kind, seed) {
+  return memo('fab:' + color + ':' + kind + ':' + seed, () => {
+    const N = 256;
+    const base = rgbOf(color);
+    const slub = fbm2D(seed + 11, 3, 8, 0.5);
+    const blot = fbm2D(seed + 19, 3, 3, 0.6);
+    const fuzz = fbm2D(seed + 29, 2, 64, 0.5);
+    const H = new Float32Array(N * N);
+    const A = new Float32Array(N * N);
+    let strength = 2.0;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const u = x / N, v = y / N;
+      let h = 0, a = 1;
+      if (kind === 'jersey') {
+        const wale = Math.sin(u * 32 * Math.PI * 2) * 0.5 + 0.5;
+        h = wale * 0.35 + slub(u, v) * 0.45 + fuzz(u, v) * 0.2;
+        a = 0.95 + (slub(u, v) - 0.5) * 0.08 - wale * 0.03;
+        strength = 1.6;
+      } else if (kind === 'satin') {
+        h = slub(u, v) * 0.6 + fuzz(u, v) * 0.15;
+        a = 0.97 + (blot(u, v) - 0.5) * 0.06;
+        strength = 0.9;
+      } else if (kind === 'rib') {
+        const rib = Math.sin(u * 24 * Math.PI * 2) * 0.5 + 0.5;
+        h = rib + fuzz(u, v) * 0.15;
+        a = 0.88 + rib * 0.12;
+        strength = 2.2;
+      } else if (kind === 'wrap') {
+        // Diagonal passes of tape, each overlapping the last: a ramp that
+        // resets at every edge gives a raised lip and a shadow line.
+        const s = (v * 5 + u * 1.0) % 1;
+        const edge = Math.pow(s, 3);
+        h = edge * 0.9 + fuzz(u, v) * 0.25 + slub(u, v) * 0.2;
+        a = 0.90 + edge * 0.10 - (s < 0.04 ? 0.18 : 0) + (slub(u, v) - 0.5) * 0.08;
+        strength = 2.4;
+      } else {
+        const cell = Math.sin(u * 20 * Math.PI * 2) * Math.sin(v * 20 * Math.PI * 2);
+        h = cell * 0.4 + fuzz(u, v) * 0.3 + slub(u, v) * 0.3;
+        a = 0.93 + cell * 0.04 + (slub(u, v) - 0.5) * 0.06;
+        strength = 1.8;
+      }
+      H[y * N + x] = h;
+      A[y * N + x] = a * (1 + (blot(u, v) - 0.5) * 0.08);
+    }
+    const map = fill(N, N, (u, v, x, y) => {
+      const k = A[y * N + x];
+      return [base[0] * k, base[1] * k, base[2] * k];
+    });
+    const normal = normalCanvas(N, N, H, strength);
+    const rough = kind === 'satin' ? 0.46 : kind === 'wrap' ? 0.92 : kind === 'rib' ? 0.85 : 0.88;
+    const orm = fill(64, 64, (u, v) => [255, Math.min(1, rough + (slub(u, v) - 0.5) * 0.1) * 255, 0]);
+    return { map, normal, orm };
+  });
+}
+
 export function makeClothMaterial(color, opts = {}) {
-  const bundle = TEX.fabric(color, opts.seed ?? 9, 512, opts.weave ?? 128);
-  const rep = opts.repeat ?? 4;
+  const kind = opts.kind ?? 'jersey';
+  const b = fabricBundle(color, kind, opts.seed ?? 9);
+  const rep = opts.repeat ?? [4, 4];
+  const r = Array.isArray(rep) ? rep : [rep, rep];
   const mat = new THREE.MeshPhysicalMaterial({
-    map: cloneTex(bundle.map, rep),
-    normalMap: cloneTex(bundle.normal, rep),
-    roughnessMap: cloneTex(bundle.orm, rep),
+    map: tex(b.map, { srgb: true, repeat: r }),
+    normalMap: tex(b.normal, { repeat: r }),
+    roughnessMap: tex(b.orm, { repeat: r }),
     roughness: 1.0,
     metalness: 0.0,
     sheen: opts.sheen ?? 0.55,
-    sheenRoughness: opts.sheenRoughness ?? 0.75,
+    sheenRoughness: opts.sheenRoughness ?? 0.6,
     sheenColor: new THREE.Color(opts.sheenColor ?? '#ffffff'),
-    envMapIntensity: opts.envMapIntensity ?? 0.8
+    envMapIntensity: opts.envMapIntensity ?? 0.75
   });
-  mat.normalScale.set(opts.normalScale ?? 1.1, opts.normalScale ?? 1.1);
+  mat.normalScale.set(opts.normalScale ?? 0.6, opts.normalScale ?? 0.6);
   mat.name = opts.name ?? 'cloth';
   return mat;
 }
 
 export function makeRubberMaterial(color, opts = {}) {
-  const bundle = TEX.fabric(color, opts.seed ?? 21, 512, 220);
+  const b = fabricBundle(color, 'knit', opts.seed ?? 21);
   const mat = new THREE.MeshStandardMaterial({
-    map: cloneTex(bundle.map, opts.repeat ?? 7),
-    normalMap: cloneTex(bundle.normal, opts.repeat ?? 7),
-    roughness: 0.82,
+    map: tex(b.map, { srgb: true, repeat: [3, 3] }),
+    roughness: 0.78,
     metalness: 0.0,
     envMapIntensity: 0.6
   });
-  mat.normalScale.set(0.7, 0.7);
   mat.name = 'sole';
   return mat;
 }
 
-// Hair borrows the brushed-metal normal: its streaks run the same way strands
-// do, so a lofted shell picks up an anisotropic-looking highlight for free.
-export function makeHairMaterial(color, seed) {
-  const bundle = TEX.metal(color, seed, 256, true);
-  const mat = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color(color),
-    normalMap: cloneTex(bundle.normal, 3),
-    roughness: 0.52,
-    metalness: 0.0,
-    sheen: 0.8,
-    sheenRoughness: 0.40,
-    sheenColor: new THREE.Color('#6b5544'),
-    envMapIntensity: 0.9,
-    // Double sided so the open hairline edge shows hair from below rather than
-    // a hole straight through to the scalp.
-    side: THREE.DoubleSide
+// ------------------------------------------------------------------ hair ----
+
+// Hair is a shell that fades out strand by strand. The map's alpha is not
+// opacity: it is a per texel threshold, equalised to a flat distribution, and
+// a fragment survives only where the vertex coverage beats it. Coverage 0.5 is
+// then half the strands, which is what a hairline or a buzz cut actually is.
+// It stays in the opaque pass on purpose: the post stack drops anything
+// transparent from its normal prepass, and a fighter with a transparent part
+// would lose its ambient occlusion.
+function hairBundle(color, seed, style) {
+  return memo('hair:' + color + ':' + seed + ':' + style, () => {
+    const N = 256;
+    const base = rgbOf(color);
+    const rng = makeRng(seed * 7 + 5);
+    const along = style === 'afro' ? 24 : 6;
+    const strand = valueNoise2D(seed + 3, 96);
+    const clump = fbm2D(seed + 9, 3, 12, 0.5);
+    const coil = fbm2D(seed + 17, 3, 20, 0.55);
+    const V = new Float32Array(N * N), H = new Float32Array(N * N);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const u = x / N, v = y / N;
+      let s;
+      if (style === 'afro') {
+        const c = coil(u, v);
+        s = Math.abs(c - 0.5) * 2;
+        s = 1 - s * 0.8 + rng() * 0.25;
+      } else {
+        // Strands stretched along v: sample the lattice at a squashed v.
+        s = strand(u, (v / along) % 1) * 0.7 + clump(u, v) * 0.3 + rng() * 0.15;
+      }
+      V[y * N + x] = s;
+      H[y * N + x] = s;
+    }
+    // Rank equalise so coverage maps linearly onto strand density.
+    const idx = Array.from({ length: N * N }, (_, i) => i).sort((a, b) => V[a] - V[b]);
+    const T = new Float32Array(N * N);
+    for (let r = 0; r < idx.length; r++) T[idx[r]] = r / (idx.length - 1);
+    const map = fill(N, N, (u, v, x, y) => {
+      const s = H[y * N + x];
+      const k = 0.72 + s * 0.5;
+      return [base[0] * k, base[1] * k, base[2] * k, T[y * N + x] * 255];
+    });
+    const normal = normalCanvas(N, N, H, style === 'afro' ? 3.0 : 2.4);
+    return { map, normal };
   });
-  mat.normalScale.set(0.75, 0.75);
+}
+
+const HAIR_VERT = [
+  '#include <begin_vertex>',
+  'vHairCover = aux.x;'
+].join('\n');
+const HAIR_FRAG = [
+  '#include <map_fragment>',
+  'if ( vHairCover <= texture2D( map, vMapUv ).a * 0.985 + 0.01 ) discard;',
+  'diffuseColor.a = 1.0;'
+].join('\n');
+
+export function makeHairMaterial(color, seed, style = 'short') {
+  const b = hairBundle(color, seed, style);
+  const rep = style === 'afro' ? [5, 3] : [4, 2];
+  const lift = new THREE.Color(color).lerp(new THREE.Color('#8a7060'), 0.35);
+  const mat = new THREE.MeshPhysicalMaterial({
+    map: tex(b.map, { srgb: true, repeat: rep }),
+    normalMap: tex(b.normal, { repeat: rep }),
+    roughness: style === 'afro' ? 0.78 : 0.55,
+    metalness: 0.0,
+    sheen: style === 'afro' ? 0.9 : 0.6,
+    sheenRoughness: 0.45,
+    sheenColor: lift,
+    envMapIntensity: 0.7,
+    // A small pull toward the camera keeps the thinnest part of the shell,
+    // where it lies almost on the scalp, from fighting the skin for depth.
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2
+  });
+  mat.normalScale.set(0.8, 0.8);
   mat.name = 'hair';
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aux;\nvarying float vHairCover;')
+      .replace('#include <begin_vertex>', HAIR_VERT);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vHairCover;')
+      .replace('#include <map_fragment>', HAIR_FRAG);
+  };
+  mat.customProgramCacheKey = () => 'fighter-hair-v2';
   return mat;
 }
 
-export function makeEyeMaterial() {
+// ------------------------------------------------------------------- eyes ---
+
+// One sphere per eye, textured from its forward pole: pupil, an iris with
+// radial fibres and a dark limbal ring, then a sclera that warms toward the
+// corners. The clearcoat is the wet cornea.
+export function makeEyeMaterial(irisColor = '#3a2a1c', seed = 1) {
+  const c = memo('eye:' + irisColor + ':' + seed, () => {
+    const W = 256, Hh = 128;
+    const iris = rgbOf(irisColor);
+    const fib = valueNoise2D(seed + 41, 64);
+    return fill(W, Hh, (u, v) => {
+      const lat = 1 - v;             // 1 at the forward pole (top of the canvas is v = 0 here)
+      const ang = (1 - lat) * 180;   // degrees from the pole
+      if (ang < 9.5) return [8, 6, 5];
+      if (ang < 29) {
+        const f = fib(u, ang / 29);
+        const k = 0.55 + f * 0.7 - Math.max(0, (ang - 25) / 4) * 0.55;
+        const inner = ang < 14 ? 0.8 : 1.0;
+        return [iris[0] * k * inner, iris[1] * k * inner, iris[2] * k * inner];
+      }
+      const t = Math.min(1, (ang - 29) / 60);
+      return [226 - t * 18, 214 - t * 30, 204 - t * 30];
+    });
+  });
+  const t = tex(c, { srgb: true, wrap: false });
   const mat = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#d9d4cc'),
-    roughness: 0.16,
+    map: t,
+    roughness: 0.32,
     metalness: 0.0,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.04,
-    envMapIntensity: 1.4
+    clearcoatRoughness: 0.03,
+    envMapIntensity: 1.1
   });
   mat.name = 'eye';
   return mat;
@@ -200,14 +487,10 @@ export function makeDarkMaterial(color) {
   return mat;
 }
 
-export function makeMetalMaterial(color, seed) {
-  const bundle = TEX.metal(color, seed, 256, true);
+export function makeMetalMaterial(color) {
   const mat = new THREE.MeshStandardMaterial({
-    map: cloneTex(bundle.map, 2),
-    normalMap: cloneTex(bundle.normal, 2),
-    roughnessMap: cloneTex(bundle.orm, 2),
-    metalnessMap: cloneTex(bundle.orm, 2),
-    roughness: 1.0,
+    color: new THREE.Color(color),
+    roughness: 0.32,
     metalness: 1.0,
     envMapIntensity: 1.2
   });
@@ -216,7 +499,8 @@ export function makeMetalMaterial(color, seed) {
 }
 
 // One call drives every skin material a fighter owns. Writing straight into
-// the cached shader uniform avoids a material recompile per frame.
+// the cached shader uniform avoids a material recompile per frame; the value
+// is also parked on userData so a program compiled later starts from it.
 export function makeSweatSetter(materials) {
   const skins = Object.values(materials).filter((m) => m.name === 'skin');
   let current = -1;
@@ -225,6 +509,7 @@ export function makeSweatSetter(materials) {
     if (w === current) return;
     current = w;
     for (let i = 0; i < skins.length; i++) {
+      skins[i].userData.sweat = w;
       const sh = skins[i].userData.shader;
       if (sh) sh.uniforms.uSweat.value = w;
     }

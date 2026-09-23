@@ -139,6 +139,10 @@ export class MeshBuilder {
     this.group = [];     // skin weight group name per vertex
     this.weld = [];      // weld island id per vertex
     this.region = [];    // damage region name per vertex
+    this.mat = [];       // material per vertex, for passes that only touch skin
+    // Two free floats per vertex. Hair reads x as coverage; skin reads x as
+    // thinness (light passes through an ear) and y as oiliness.
+    this.aux = [];
     this.parts = [];     // { mat, idx: [] }
     this._part = null;
   }
@@ -148,18 +152,21 @@ export class MeshBuilder {
   // Every subsequent add lands in this material bucket. Buckets are merged
   // into geometry groups at build time, so material count equals draw calls.
   begin(mat, opts = {}) {
+    this._aux0 = opts.aux0 ?? 0;
     this._part = { mat, idx: [], group: opts.group || 'torso', weld: opts.weld ?? mat, region: opts.region || 'torso' };
     this.parts.push(this._part);
     return this;
   }
 
-  _push(x, y, z, u, v) {
+  _push(x, y, z, u, v, a0 = this._aux0, a1 = 0) {
     const p = this._part;
     this.pos.push(x, y, z);
     this.uv.push(u, v);
     this.group.push(p.group);
     this.weld.push(p.weld);
     this.region.push(p.region);
+    this.mat.push(p.mat);
+    this.aux.push(a0, a1);
     return this.pos.length / 3 - 1;
   }
 
@@ -185,27 +192,31 @@ export class MeshBuilder {
     } else {
       for (let k = 0; k < nv; k++) vs[k] = k / (nv - 1);
     }
+    const aux = opts.aux;
     for (let k = 0; k < nv; k++) {
       const vv = v0 + (opts.flipV ? 1 - vs[k] : vs[k]) * (v1 - v0);
       for (let i = 0; i < cols; i++) {
         const p = rings[k][i % nu];
-        this._push(p.x, p.y, p.z, u0 + (i / (cols - 1)) * (u1 - u0), vv);
+        const a0 = aux ? aux[k][i % nu] : this._aux0;
+        this._push(p.x, p.y, p.z, u0 + (i / (cols - 1)) * (u1 - u0), vv, a0);
       }
     }
     const idx = this._part.idx;
+    const flip = !!opts.flipWinding;
     for (let k = 0; k < nv - 1; k++) {
       for (let i = 0; i < cols - 1; i++) {
         const a = base + k * cols + i, b = a + 1;
         const c = a + cols, d = c + 1;
-        idx.push(a, b, c, b, d, c);
+        if (flip) idx.push(a, c, b, b, c, d); else idx.push(a, b, c, b, d, c);
       }
     }
-    if (opts.capStart) this._cap(rings[0], rect, true, opts.capSmooth);
-    if (opts.capEnd) this._cap(rings[nv - 1], rect, false, opts.capSmooth);
+    const a0s = aux ? aux[0][0] : this._aux0, a0e = aux ? aux[nv - 1][0] : this._aux0;
+    if (opts.capStart) this._cap(rings[0], rect, flip ? false : true, opts.capSmooth, a0s);
+    if (opts.capEnd) this._cap(rings[nv - 1], rect, flip ? true : false, opts.capSmooth, a0e);
     return this;
   }
 
-  _cap(ring, rect, isStart, smooth) {
+  _cap(ring, rect, isStart, smooth, a0 = this._aux0) {
     const nu = ring.length;
     const cx = ring.reduce((s, p) => s + p.x, 0) / nu;
     const cy = ring.reduce((s, p) => s + p.y, 0) / nu;
@@ -215,12 +226,12 @@ export class MeshBuilder {
     // soles and bottle bases but leaves the crown of the skull smooth.
     if (!smooth) this._part.weld = prevWeld + ':cap' + this.pos.length;
     const uc = (rect[0] + rect[2]) * 0.5, vc = rect[1] + (isStart ? 0.02 : 0.98) * (rect[3] - rect[1]);
-    const c = this._push(cx, cy, cz, uc, vc);
+    const c = this._push(cx, cy, cz, uc, vc, a0);
     const start = this.vertexCount;
     for (let i = 0; i < nu; i++) {
       const p = ring[i];
       const a = (i / nu) * Math.PI * 2;
-      this._push(p.x, p.y, p.z, uc + Math.cos(a) * (rect[2] - rect[0]) * 0.04, vc + Math.sin(a) * (rect[3] - rect[1]) * 0.04);
+      this._push(p.x, p.y, p.z, uc + Math.cos(a) * (rect[2] - rect[0]) * 0.04, vc + Math.sin(a) * (rect[3] - rect[1]) * 0.04, a0);
     }
     const idx = this._part.idx;
     for (let i = 0; i < nu; i++) {
@@ -276,10 +287,11 @@ export class MeshBuilder {
     }
     geo.setAttribute('position', new THREE.BufferAttribute(position, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setAttribute('aux', new THREE.BufferAttribute(new Float32Array(this.aux), 2));
     geo.setIndex(new THREE.BufferAttribute(index, 1));
     geo.setAttribute('normal', new THREE.BufferAttribute(smoothNormals(position, index, this.weld), 3));
     geo.computeBoundingSphere();
-    return { geometry: geo, materials: mats, groups: this.group, regions: this.region, vertexCount: vc };
+    return { geometry: geo, materials: mats, groups: this.group, regions: this.region, vmat: this.mat, vertexCount: vc };
   }
 }
 
