@@ -15,7 +15,11 @@ html,body{margin:0;height:100%;background:#05060a;overflow:hidden;
 
 /* Top fighter bars */
 .bars{position:absolute;top:18px;left:50%;transform:translateX(-50%);
-  display:flex;align-items:flex-start;gap:26px;width:min(1180px,94vw)}
+  display:flex;align-items:flex-start;gap:0;width:min(1240px,96vw)}
+/* A real centre column, so the timer, round label and pips have somewhere to
+   live that is not on top of the health gradients. */
+.gutter{flex:0 0 250px;display:flex;flex-direction:column;align-items:center;
+  padding:0 14px}
 .side{flex:1;display:flex;flex-direction:column;gap:6px}
 .side.right{align-items:flex-end}
 .nameplate{display:flex;align-items:center;gap:10px;font-family:'Anton',sans-serif;
@@ -39,12 +43,11 @@ html,body{margin:0;height:100%;background:#05060a;overflow:hidden;
 .label{font-size:12px;letter-spacing:.24em;opacity:.65;text-transform:uppercase}
 
 /* Round timer */
-.timer{position:absolute;top:14px;left:50%;transform:translateX(-50%);
-  font-family:'Anton',sans-serif;font-size:56px;line-height:1;
+.timer{font-family:'Anton',sans-serif;font-size:54px;line-height:1;margin-top:-4px;
   text-shadow:0 0 30px rgba(255,42,109,.6),0 4px 20px rgba(0,0,0,.9);
   font-variant-numeric:tabular-nums}
-.round{position:absolute;top:76px;left:50%;transform:translateX(-50%);
-  font-size:13px;letter-spacing:.42em;opacity:.7;text-transform:uppercase}
+.round{font-size:12px;letter-spacing:.3em;opacity:.72;text-transform:uppercase;
+  margin-top:4px;white-space:nowrap}
 
 /* Combo */
 .combo{position:absolute;left:7%;top:38%;font-family:'Anton',sans-serif;
@@ -93,8 +96,7 @@ html,body{margin:0;height:100%;background:#05060a;overflow:hidden;
   font-size:12px;opacity:.35;letter-spacing:.06em}
 
 /* Round pips: best of three, read at a glance without counting. */
-.pips{position:absolute;top:104px;left:50%;transform:translateX(-50%);
-  display:flex;gap:56px;align-items:center}
+.pips{display:flex;gap:40px;align-items:center;margin-top:9px}
 .pipset{display:flex;gap:7px}
 .pipset.r{flex-direction:row-reverse}
 .pip{width:11px;height:11px;border-radius:50%;background:rgba(255,255,255,.14);
@@ -117,4 +119,10 @@ html,body{margin:0;height:100%;background:#05060a;overflow:hidden;
 .hype.ready .hype-label{opacity:1;color:var(--gold);animation:blink 1.1s ease-in-out infinite}
 
 .timer.urgent{color:#ff4d4d;animation:tick 1s steps(2) infinite}
-@keyframes tick{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.07)}}
+@keyframes tick{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+
+/* Capture mode strips the tutorial and the debug readout, so a review frame
+   is a screenshot of the game rather than of its scaffolding. */
+body.capture .perf,body.capture .hints{display:none}
+.hints{transition:opacity .8s ease}
+.hints.faded{opacity:0}

@@ -18,7 +18,7 @@ const BEATS = [
   { id: '02-closeup-face', frames: 6,
     setup: `(()=>{const g=window.__game; g.match.tpcam.override={dist:3.0,pitch:0.03,fov:32};})()`,
     note: 'Camera pushed in on the fighters: material and face detail.' },
-  { id: '03-impact', frames: 3,
+  { id: '03-impact', frames: 2, freezeAfter: true,
     setup: `(()=>{const g=window.__game,m=g.match;g.match.tpcam.override={dist:3.0,pitch:0.05,fov:44};
       m.player.position.set(-0.6,0,0);m.cpu.position.set(0.55,0,0);
       m.player.attack('hook', m.cpu);})()`,
@@ -27,7 +27,7 @@ const BEATS = [
     setup: `(()=>{const g=window.__game,m=g.match;m.player.drunk=100;m.cpu.drunk=88;
       g.match.tpcam.override={dist:4.0,pitch:0.08,fov:50};})()`,
     note: 'Maximum drunkenness: the signature post FX and the sway.' },
-  { id: '05-knockdown', frames: 4,
+  { id: '05-knockdown', frames: 2, freezeAfter: true,
     setup: `(()=>{const g=window.__game,m=g.match;m.cpu.takeHit(m.player,{dmg:34,push:5,reach:2,part:'head',stam:0},'head');})()`,
     note: 'Knockdown: ragdoll, slow motion, crowd reaction.' },
   { id: '06-venue-wide', frames: 6,
@@ -36,7 +36,7 @@ const BEATS = [
   { id: '07-floor-reflection', frames: 6,
     setup: `(()=>{const g=window.__game;g.match.tpcam.override={dist:4.2,pitch:-0.26,fov:48};})()`,
     note: 'Low angle across the floor: reflections and contact shadows.' },
-  { id: '08-ko-moment', frames: 4,
+  { id: '08-ko-moment', frames: 2, freezeAfter: true,
     setup: `(()=>{const g=window.__game,m=g.match;m.cpu.health=1;
       m.cpu.takeHit(m.player,{dmg:50,push:7,reach:2,part:'head',stam:0},'head');
       g.match.tpcam.override={dist:3.4,pitch:0.02,fov:42};})()`,
@@ -55,7 +55,7 @@ const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
 p.on('console', (m) => { if (m.type() === 'error') errors.push('[console] ' + m.text()); });
 
-const Q = process.env.QUALITY || 'medium';
+const Q = process.env.QUALITY || 'high';
 await p.goto(`http://localhost:${PORT}/?auto&q=${Q}`, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
 // Software rendering runs at about one frame a second here, so every wait in
@@ -71,11 +71,27 @@ async function waitFrames(n, budgetMs = 120000) {
   }
 }
 await waitFrames(18);
+// The capture is a screenshot of the game, not of the tutorial.
+await p.evaluate(`(()=>{document.body.classList.add('capture');})()`).catch(() => {});
 
 const manifest = [];
 for (const beat of BEATS) {
+  // Every beat starts from a known state. Without this reset beat 04's
+  // maximum drunk leaked into 05, 07 and 08, and the three frames that should
+  // be the cleanest in the packet were the dirtiest.
+  try {
+    await p.evaluate(`(()=>{const g=window.__game;if(!g)return;
+      g.match.player.drunk=35;g.match.cpu.drunk=35;
+      g.match.tpcam.override=null;g.time.scale=1;g.time.hitstop=0;g.time.slowmo=0;
+      document.body.classList.remove('capture-clean');})()`);
+  } catch { /* the page owns its state, a failed reset is not fatal */ }
   if (beat.setup) { try { await p.evaluate(beat.setup); } catch (e) { errors.push(`[setup ${beat.id}] ${e.message}`); } }
   await waitFrames(beat.frames ?? 8);
+  if (beat.freezeAfter) {
+    // Stop the clock on the dramatic instant instead of racing it.
+    await p.evaluate(`(()=>{window.__game.time.scale=0;})()`).catch(() => {});
+    await waitFrames(1);
+  }
   const file = join(OUT, `${PREFIX}-${beat.id}.png`);
   await p.screenshot({ path: file });
   manifest.push({ id: beat.id, file, note: beat.note });

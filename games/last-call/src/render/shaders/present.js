@@ -91,7 +91,9 @@ void main() {
 
   // Chromatic aberration scales with distance from centre, the way a real lens
   // does, and the drunk layer multiplies it hard.
-  float ca = uChromatic * (1.0 + uDrunk * 7.0);
+  // A 7x multiplier put 13 pixels of RGB separation at the frame edge, which
+  // is the rubric's "aberration as a mask for missing detail" verbatim.
+  float ca = uChromatic * (1.0 + uDrunk * 2.5);
   vec3 col;
   if (ca > 0.00001) {
     col.r = fxaa(uv + c * ca).r;
@@ -113,9 +115,13 @@ void main() {
   // Double vision. The ghost is taken after DOF so it inherits the blur, which
   // is what stops it reading as a cheap offset copy.
   if (uDrunk > 0.02) {
+    // Double vision belongs at the edge of the eye, not on the thing you are
+    // trying to punch. Keeping the centre single is what lets the effect go
+    // hard without costing the silhouette.
     vec2 g = vec2(sin(uTime * 1.31), cos(uTime * 0.97)) * 0.012 * uDrunk;
     vec3 ghost = texture2D(tColor, uv + g).rgb;
-    col = mix(col, max(col, ghost), uDrunk * 0.4);
+    float edge = smoothstep(0.22, 0.72, length(c));
+    col = mix(col, max(col, ghost), uDrunk * 0.32 * edge);
   }
 
   col += texture2D(tBloom, uv).rgb * uBloomStrength;

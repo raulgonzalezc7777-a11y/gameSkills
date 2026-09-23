@@ -616,12 +616,16 @@ export function buildFighter(spec = {}) {
     body: ['hips', 'spine', 'chest', 'neck', 'head', 'shoulderL', 'shoulderR', 'thighL', 'thighR'],
     armL: ['chest', 'shoulderL', 'upperArmL', 'forearmL', 'handL'],
     armR: ['chest', 'shoulderR', 'upperArmR', 'forearmR', 'handR'],
-    handL: ['forearmL', 'handL'],
-    handR: ['forearmR', 'handR'],
+    // Garments must see the same bones as the limb underneath them. The wraps
+    // span mid forearm to past the wrist, so skin under them carries upper arm
+    // and chest influence while the wrap carried none, and any elbow rotation
+    // sheared the two surfaces apart into floating white cuffs.
+    handL: ['chest', 'shoulderL', 'upperArmL', 'forearmL', 'handL'],
+    handR: ['chest', 'shoulderR', 'upperArmR', 'forearmR', 'handR'],
     legL: ['hips', 'thighL', 'shinL', 'footL'],
     legR: ['hips', 'thighR', 'shinR', 'footR'],
-    footL: ['shinL', 'footL'],
-    footR: ['shinR', 'footR'],
+    footL: ['hips', 'thighL', 'shinL', 'footL'],
+    footR: ['hips', 'thighR', 'shinR', 'footR'],
     torso: ['hips', 'spine', 'chest']
   };
   const boneIndex = {};

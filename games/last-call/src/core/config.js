@@ -60,7 +60,7 @@ export const CFG = {
 
 export const QUALITY_PRESETS = {
   cinematic: { shadowMapSize: 4096, ssao: true, ssr: true, motionBlur: true, dof: true, particleBudget: 20000, crowd: 160 },
-  high:      { shadowMapSize: 2048, ssao: true, ssr: true, motionBlur: true, dof: true, particleBudget: 12000, crowd: 110 },
-  medium:    { shadowMapSize: 1024, ssao: true, ssr: false, motionBlur: false, dof: false, particleBudget: 6000, crowd: 60 },
+  high:      { shadowMapSize: 2048, ssao: true, ssr: true, motionBlur: true, dof: true, particleBudget: 12000, crowd: 190 },
+  medium:    { shadowMapSize: 1024, ssao: true, ssr: true, motionBlur: false, dof: true, particleBudget: 6000, crowd: 120 },
   low:       { shadowMapSize: 512,  ssao: false, ssr: false, motionBlur: false, dof: false, particleBudget: 2500, crowd: 24 }
 };

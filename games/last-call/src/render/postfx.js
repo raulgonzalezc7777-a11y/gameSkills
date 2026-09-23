@@ -163,7 +163,7 @@ export class PostFX {
       uUpView: new THREE.Vector3(0, 1, 0), uTexel: new THREE.Vector2(),
       uNear: 0.1, uFar: 120, uMaxDistance: 9, uThickness: 0.32,
       uIntensity: 0.9, uRoughness: 0.24, uMaxHeight: 0.12, uJitter: 0
-    }));
+    }), { STEPS: 24, REFINE_STEPS: 5 });
 
     this.resolveMat = this._mat(RESOLVE_FRAG, U({
       tColor: null, tAO: null, tSSR: null, tDepth: null,

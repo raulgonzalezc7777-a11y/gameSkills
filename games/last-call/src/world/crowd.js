@@ -143,7 +143,7 @@ const COLOR_HOOK = /* glsl */`
 
 export class Crowd {
   constructor(group, opts = {}) {
-    const count = opts.count ?? 180;
+    const count = opts.count ?? 210;
     this.count = count;
     this.excite = 0;
     this.surge = 0;
@@ -189,8 +189,8 @@ export class Crowd {
     // looking like a bag of sweets.
     const shirtPalette = [
       0x14161d, 0x1b1f2b, 0x232734, 0x2c1f2b, 0x101418, 0x3a2430,
-      0xb8243c, 0xe8563f, 0xf0c24a, 0x1f8f9e, 0x7b3fbf, 0xe4e7ee,
-      0x2f6f4a, 0xd94f8a, 0x2b4fa8
+      0x7a2030, 0x94402f, 0x9c7f38, 0x1d5f68, 0x523079, 0x9a9daa,
+      0x265244, 0x8d3a5e, 0x24386b
     ];
     const skinPalette = ['#c98d6b', '#8a5a3c', '#e6c09a', '#6b4229', '#f0cda8', '#a06a45', '#4e3020'];
     const trouserPalette = [0x14161c, 0x1c2433, 0x232323, 0x2d3648, 0x101010, 0x3a2c22];

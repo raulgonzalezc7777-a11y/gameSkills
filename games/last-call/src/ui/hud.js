@@ -12,11 +12,13 @@ export class HUD {
       <div class="hud" id="hud">
         <div class="bars">
           ${this.side('l', 'L')}
+          <div class="gutter">
+            <div class="timer" id="timer">99</div>
+            <div class="round" id="round">Round 1 of 3</div>
+            <div class="pips" id="pips"></div>
+          </div>
           ${this.side('r', 'R')}
         </div>
-        <div class="timer" id="timer">99</div>
-        <div class="round" id="round">Round 1 of 3</div>
-        <div class="pips" id="pips"></div>
         <div class="hype" id="hype">
           <div class="hype-track"><div class="hype-fill" id="hype-fill"></div></div>
           <div class="hype-label" id="hype-label">Crowd</div>
@@ -69,7 +71,14 @@ export class HUD {
     </div>`;
   }
 
-  start() { this.els.title.classList.add('hide'); this.els.hud.classList.add('on'); }
+  start() {
+    this.els.title.classList.add('hide');
+    this.els.hud.classList.add('on');
+    // The control strip is a tutorial, not HUD. It earns its place for the
+    // first few seconds and then gets out of the way of the fight.
+    clearTimeout(this._hintTimer);
+    this._hintTimer = setTimeout(() => this.root?.querySelector('.hints')?.classList.add('faded'), 11000);
+  }
 
   announce(text) {
     const a = this.els.announce;

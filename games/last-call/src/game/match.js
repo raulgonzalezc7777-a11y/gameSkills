@@ -53,6 +53,12 @@ export class Match {
     // Light the fight, not the middle of the room.
     _focus.copy(this.player.position).lerp(this.cpu.position, 0.5);
     this.arena.setFocus(_focus);
+    // Plant both fighters on the floor. Radius follows their build so the
+    // heavy one casts a wider pool than the lean one.
+    this.arena.setBlob(0, this.player.position.x, this.player.position.z,
+      0.42 + (this.player.rig?.height ?? 1.85) * 0.06, Math.max(0, this.player.position.y));
+    this.arena.setBlob(1, this.cpu.position.x, this.cpu.position.z,
+      0.42 + (this.cpu.rig?.height ?? 1.85) * 0.06, Math.max(0, this.cpu.position.y));
     this.arena.update(dt, time.elapsed);
     this.tpcam.drunk = this.player.drunk01;
 

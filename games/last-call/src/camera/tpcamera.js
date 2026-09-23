@@ -83,12 +83,22 @@ export class TPCamera {
     // leading room rather than centring the player's spine.
     _mid.lerp(_b, 0.18);
 
-    // Keep the camera inside the venue.
+    // Keep the camera inside the venue. The room is a 9.6 by 7.4 rectangle
+    // with a 4.7 ceiling, so a single radius clamp both over-restricted the
+    // long axis and let the camera climb straight through the roof, where a
+    // BackSide ceiling plane filled the frustum with unlit black.
     if (this.arena) {
-      const r = Math.hypot(_c.x, _c.z);
-      const lim = this.arena.radius + 1.6;
-      if (r > lim) { _c.x *= lim / r; _c.z *= lim / r; }
-      _c.y = Math.max(_c.y, 0.65);
+      const room = this.arena.room;
+      if (room) {
+        _c.x = clamp(_c.x, -room.hx + 0.5, room.hx - 0.5);
+        _c.z = clamp(_c.z, -room.hz + 0.5, room.hz - 0.5);
+        _c.y = clamp(_c.y, 0.65, room.h - 0.45);
+      } else {
+        const r = Math.hypot(_c.x, _c.z);
+        const lim = (this.arena.radius ?? 8) + 1.6;
+        if (r > lim) { _c.x *= lim / r; _c.z *= lim / r; }
+        _c.y = clamp(_c.y, 0.65, 4.2);
+      }
     }
 
     this.pos.copy(_c);
