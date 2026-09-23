@@ -32,28 +32,32 @@ export class Impacts {
     const sys = this.vfx.sys;
     const col = o.color;
 
+    // The flash sits just past the contact point along the punch, so it backs
+    // the head being hit instead of covering it, and it stays small: the
+    // receiver's reaction is the read, the flash only punctuates it.
+    const px2 = px + dx * 0.15, py2 = py + dy * 0.15, pz2 = pz + dz * 0.15;
     reset();
-    S.x = px; S.y = py; S.z = pz;
-    S.life = 0.11 + power * 0.045;
-    S.sizeA = 0.10 * power;
-    S.sizeB = 0.72 * power;
-    S.r = 1; S.g = 0.97; S.b = 0.92;
+    S.x = px2; S.y = py2; S.z = pz2;
+    S.life = 0.09 + power * 0.035;
+    S.sizeA = 0.06 * power;
+    S.sizeB = 0.34 * power;
+    S.r = 1; S.g = 0.9; S.b = 0.78;
     S.r2 = col ? col.r : 1.0; S.g2 = col ? col.g : 0.62; S.b2 = col ? col.b : 0.34;
     // Well above the bloom threshold, so the core blooms rather than the frame.
-    S.bright = 2.6 + power * 1.0;
+    S.bright = 1.3 + power * 0.45;
     sys.flash.spawn(S);
 
     // A second, wider and dimmer flash one tick behind gives the light a decay
     // instead of a hard off.
     reset();
-    S.x = px; S.y = py; S.z = pz;
-    S.life = 0.26 + power * 0.1;
-    S.sizeA = 0.22 * power;
-    S.sizeB = 0.72 * power;
+    S.x = px2; S.y = py2; S.z = pz2;
+    S.life = 0.2 + power * 0.08;
+    S.sizeA = 0.12 * power;
+    S.sizeB = 0.42 * power;
     S.r = col ? col.r : 1.0; S.g = col ? col.g : 0.55; S.b = col ? col.b : 0.30;
     S.r2 = 0.42; S.g2 = 0.16; S.b2 = 0.30;
     S.opacity = 0.75;
-    S.bright = 1.2 + power * 0.4;
+    S.bright = 0.7 + power * 0.25;
     sys.flash.spawn(S);
 
     const n = Math.round((o.count ?? 9) * power);

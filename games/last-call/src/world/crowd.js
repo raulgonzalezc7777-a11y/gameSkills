@@ -33,50 +33,65 @@ function tag(geo, part, arm = 0) {
   return geo;
 }
 
-const box = (w, h, d, x, y, z, part, arm) => {
-  const g = new THREE.BoxGeometry(w, h, d);
-  g.translate(x, y, z);
-  return tag(g, part, arm);
+// Rounded volumes only. The first crowd was built from boxes, and a box is the
+// one shape a human body never makes: the moment the camera came near a punter
+// the frame read as a toy. Capsules and spheres at low segment counts cost a
+// few hundred triangles more per body and read as people at every distance.
+const piece = (geo, x, y, z, part, arm = 0, sx = 1, sy = 1, sz = 1, rx = 0) => {
+  if (sx !== 1 || sy !== 1 || sz !== 1) geo.scale(sx, sy, sz);
+  if (rx) geo.rotateX(rx);
+  geo.translate(x, y, z);
+  return tag(geo, part, arm);
 };
+const cap = (r, len, seg = 7) => new THREE.CapsuleGeometry(r, len, 2, seg);
+const ball = (r, w = 10, h = 8) => new THREE.SphereGeometry(r, w, h);
 
 // Shoulder pivot the vertex shader rotates the arms around. Shared with the
 // shader as a constant so the two never drift apart.
-const SHOULDER_X = 0.235;
-const SHOULDER_Y = 1.44;
+const SHOULDER_X = 0.205;
+const SHOULDER_Y = 1.43;
 
 function buildBodyGeometry() {
   const parts = [];
 
-  // Head and hair. Small, but it is the top of the silhouette so it reads.
-  parts.push(box(0.18, 0.22, 0.19, 0, 1.62, 0, PARTS.SKIN));
-  parts.push(box(0.195, 0.09, 0.2, 0, 1.735, -0.008, PARTS.HAIR));
-  parts.push(box(0.09, 0.08, 0.09, 0, 1.49, 0, PARTS.SKIN));
+  // Head: taller than wide, deeper at the back than the face, the way a skull
+  // is. The hair is a cap that hugs the crown, not a hat.
+  parts.push(piece(ball(0.102, 12, 10), 0, 1.635, 0, PARTS.SKIN, 0, 0.9, 1.13, 1.0));
+  const hair = new THREE.SphereGeometry(0.108, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.46);
+  parts.push(piece(hair, 0, 1.655, -0.012, PARTS.HAIR, 0, 0.93, 1.1, 1.04));
+  parts.push(piece(ball(0.024, 6, 5), 0, 1.622, 0.098, PARTS.SKIN));          // nose
+  parts.push(piece(new THREE.CylinderGeometry(0.052, 0.062, 0.12, 8, 1), 0, 1.505, 0, PARTS.SKIN));
 
-  // Torso: a tapered cylinder gives sloping shoulders that a box cannot.
-  const torso = new THREE.CylinderGeometry(0.215, 0.165, 0.56, 8, 1);
-  torso.translate(0, 1.16, 0);
-  torso.scale(1, 1, 0.66);
-  parts.push(tag(torso, PARTS.SHIRT));
-  parts.push(box(0.5, 0.1, 0.24, 0, 1.42, 0, PARTS.SHIRT));
+  // Torso: a chest capsule over a narrower waist capsule gives the V taper a
+  // standing body has, and the shoulder balls round off the top line.
+  parts.push(piece(cap(0.17, 0.22, 9), 0, 1.25, 0, PARTS.SHIRT, 0, 1.18, 1.0, 0.72));
+  parts.push(piece(cap(0.14, 0.14, 9), 0, 1.0, 0, PARTS.SHIRT, 0, 1.12, 1.0, 0.74));
+  for (const s of [-1, 1]) parts.push(piece(ball(0.075, 8, 6), s * SHOULDER_X, SHOULDER_Y, 0, PARTS.SHIRT, s));
 
   // Hips and legs.
-  parts.push(box(0.33, 0.2, 0.22, 0, 0.83, 0, PARTS.TROUSER));
-  parts.push(box(0.145, 0.78, 0.17, -0.093, 0.39, 0, PARTS.TROUSER));
-  parts.push(box(0.145, 0.78, 0.17, 0.093, 0.39, 0, PARTS.TROUSER));
-  parts.push(box(0.15, 0.07, 0.25, -0.093, 0.035, 0.03, PARTS.HAIR));
-  parts.push(box(0.15, 0.07, 0.25, 0.093, 0.035, 0.03, PARTS.HAIR));
+  parts.push(piece(cap(0.13, 0.08, 9), 0, 0.86, 0, PARTS.TROUSER, 0, 1.2, 1.0, 0.8));
+  for (const s of [-1, 1]) {
+    parts.push(piece(cap(0.078, 0.34), s * 0.092, 0.6, 0, PARTS.TROUSER));
+    parts.push(piece(cap(0.062, 0.34), s * 0.094, 0.24, 0.005, PARTS.TROUSER));
+    parts.push(piece(cap(0.05, 0.14, 6), s * 0.094, 0.045, 0.045, PARTS.HAIR, 0, 1.15, 0.75, 1, Math.PI / 2));
+  }
 
   // Arms hang from the shoulder pivot; the shader swings them from there.
   for (const s of [-1, 1]) {
-    parts.push(box(0.115, 0.34, 0.115, s * SHOULDER_X, SHOULDER_Y - 0.18, 0, PARTS.SKIN, s));
-    parts.push(box(0.1, 0.34, 0.1, s * SHOULDER_X, SHOULDER_Y - 0.5, 0, PARTS.SKIN, s));
+    parts.push(piece(cap(0.052, 0.24), s * SHOULDER_X, SHOULDER_Y - 0.17, 0, PARTS.SKIN, s));
+    parts.push(piece(cap(0.044, 0.22), s * SHOULDER_X, SHOULDER_Y - 0.46, 0.01, PARTS.SKIN, s));
+    parts.push(piece(ball(0.045, 7, 6), s * SHOULDER_X, SHOULDER_Y - 0.64, 0.015, PARTS.SKIN, s));
   }
 
-  // A pint glass welded to the right hand, collapsed away when unused.
-  const cup = new THREE.CylinderGeometry(0.043, 0.036, 0.13, 6, 1);
-  cup.translate(SHOULDER_X, SHOULDER_Y - 0.72, 0);
+  // A pint glass in the right hand, collapsed away when unused.
+  const cup = new THREE.CylinderGeometry(0.041, 0.034, 0.13, 8, 1);
+  cup.translate(SHOULDER_X, SHOULDER_Y - 0.72, 0.03);
   parts.push(tag(cup, PARTS.DRINK, 1));
 
+  // Every piece must carry the same attribute set before a merge.
+  for (const g of parts) {
+    if (!g.index) g.setIndex([...Array(g.attributes.position.count).keys()]);
+  }
   const merged = mergeGeometries(parts, false);
   parts.forEach((p) => p.dispose());
   merged.computeVertexNormals();

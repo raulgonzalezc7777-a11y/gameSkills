@@ -17,7 +17,7 @@ export const CFG = {
     grain: 0.055,
     vignette: 0.38,
     chromatic: 0.0021,
-    grading: { lift: 0.012, gamma: 0.98, gain: 1.04, saturation: 1.12, temperature: 0.06 }
+    grading: { lift: 0.008, gamma: 1.0, gain: 1.02, saturation: 0.94, temperature: 0.05 }
   },
   camera: {
     fov: 46,

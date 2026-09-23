@@ -126,11 +126,11 @@ export class Arena {
     floorGeo.rotateX(-Math.PI / 2);
     floorGeo.setAttribute('uv2', floorGeo.attributes.uv);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff, roughness: 0.78, metalness: 0.04, envMapIntensity: 0.9
+      color: 0x8f8074, roughness: 0.6, metalness: 0.0, envMapIntensity: 1.35
     });
-    applyPBR(floorMat, TEX.wood('#3b2416', 17, 512, 8), 7);
+    applyPBR(floorMat, TEX.wood('#2c1b11', 17, 512, 8), 13);
     const spill = spillMask(512, 77);
-    spill.repeat.set(2.4, 2.4);
+    spill.repeat.set(1.6, 1.6);
     floorMat.roughnessMap = spill;
     floorMat.onBeforeCompile = (sh) => {
       // Invert the spill mask into roughness: wet floor is smooth floor.
@@ -138,7 +138,10 @@ export class Arena {
         '#include <roughnessmap_fragment>',
         `float roughnessFactor = roughness;
          vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
-         roughnessFactor *= mix( 1.0, 0.16, texelRoughness.g );`
+         // Wet wood is a gloss change, not a black hole. Taken all the way to
+         // mirror smooth, the puddles reflected the dark ceiling and read as
+         // spilled oil; held at satin they pick up the neon instead.
+         roughnessFactor *= mix( 1.0, 0.42, texelRoughness.g * 0.8 );`
       );
     };
     floorMat.customProgramCacheKey = () => 'lastcall-floor';
@@ -147,116 +150,22 @@ export class Arena {
     this.group.add(floor);
     this.floorMat = floorMat;
 
-    // The light-up floor: one instanced mesh per palette colour.
-    //
-    // This used to be a single custom ShaderMaterial, which looked fine in
-    // isolation and cost the frame two things that mattered more. It opted out
-    // of tone mapping, so four fully saturated hues sat above every roll-off in
-    // the scene and the floor became the brightest object in every shot. And a
-    // raw ShaderMaterial receives no shadows, so with the tiles covering the
-    // wood that does receive, not one fighter had a contact shadow anywhere.
-    // Standard materials in colour buckets fix both, and twelve draw calls for
-    // the whole dance floor is not a budget worth defending.
-
-    const palette = [PINK, CYAN, VIOLET, GOLD];
-
-    // Back to a dedicated shader, because a standard material renders an
-    // emissive panel as flat paint and this floor needs a lit-acrylic read.
-    // The two things that cost the frame last time are fixed inside it: the
-    // colour is tone mapped here rather than opting out of the curve, and it
-    // falls off toward the ring so a tile at the wall is not as bright as a
-    // tile under the key.
-    const tileMat = new THREE.ShaderMaterial({
-      uniforms: { uIntensity: { value: 1 }, uBeat: { value: 0 }, uFloorR: { value: FLOOR_R } },
-      vertexShader: /* glsl */`
-        attribute float aPhase;
-        uniform float uFloorR;
-        varying vec3 vTint;
-        varying vec2 vLocal;
-        varying float vPhase;
-        varying float vRadial;
-        varying vec3 vView;
-        void main() {
-          vTint = instanceColor;
-          vLocal = uv - 0.5;
-          vPhase = aPhase;
-          vec4 world = instanceMatrix * vec4(position, 1.0);
-          vRadial = clamp(length(world.xz) / uFloorR, 0.0, 1.0);
-          vec4 mv = modelViewMatrix * world;
-          vView = -mv.xyz;
-          gl_Position = projectionMatrix * mv;
-        }`,
-      fragmentShader: /* glsl */`
-        precision highp float;
-        uniform float uIntensity;
-        uniform float uBeat;
-        varying vec3 vTint;
-        varying vec2 vLocal;
-        varying float vPhase;
-        varying float vRadial;
-        varying vec3 vView;
-
-        vec3 ACESFilm(vec3 x){
-          const float a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
-          return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
-        }
-
-        void main() {
-          float d = max(abs(vLocal.x), abs(vLocal.y)) * 2.0;
-          float panel = 1.0 - smoothstep(0.80, 1.0, d);
-          float core = 1.0 - smoothstep(0.0, 0.95, d);
-          float wave = 0.5 + 0.5 * sin((uBeat - vPhase) * 6.2831853);
-
-          // Distance falloff, so the floor has a centre and the eye goes there.
-          float fall = 1.0 - 0.62 * vRadial * vRadial;
-
-          float lit = panel * (0.30 + core * 0.70) * (0.34 + wave * 0.80) * fall;
-          vec3 col = vTint * lit * uIntensity;
-
-          // A gloss rim near the panel edge: the scratched acrylic lip that
-          // catches the truss. Cheap, and it is what stops the tile reading
-          // as a coloured rectangle.
-          vec3 V = normalize(vView);
-          float fres = pow(1.0 - clamp(V.y, 0.0, 1.0), 4.0);
-          col += vTint * fres * 0.30 * panel * fall;
-          col += vec3(1.0) * smoothstep(0.80, 0.97, d) * 0.06 * fall;
-
-          // The floor lives under the same curve as everything else now.
-          gl_FragColor = vec4(ACESFilm(col), 1.0);
-        }`
+    // No light-up disco floor. A checkerboard of glowing panels is the one
+    // object in the room that says "game" before anything else does, and in
+    // every review frame it was the brightest, most saturated thing on screen,
+    // so the eye landed on the floor instead of on the fight. A real dive bar
+    // has worn, wet boards; the music lives in an LED strip sunk into them.
+    const ledGeo = new THREE.TorusGeometry(FLOOR_R - 0.06, 0.018, 6, 160);
+    ledGeo.rotateX(Math.PI / 2);
+    const ledMat = new THREE.MeshStandardMaterial({
+      color: 0x050507, emissive: PINK, emissiveIntensity: 2.2, roughness: 0.3
     });
-
-    const slots = [];
-    for (let x = -7; x <= 7; x++) {
-      for (let z = -7; z <= 7; z++) {
-        const px = x * 0.94, pz = z * 0.94;
-        if (Math.hypot(px, pz) > FLOOR_R - 0.15) continue;
-        if ((x + z) % 2 !== 0) continue;
-        slots.push([px, pz]);
-      }
-    }
-
-    // Slightly smaller than the grid pitch, so the wood between tiles is wide
-    // enough to read, and wide enough to carry a real shadow.
-    const tileGeo = new THREE.PlaneGeometry(0.76, 0.76);
-    tileGeo.rotateX(-Math.PI / 2);
-
-    const tiles = new THREE.InstancedMesh(tileGeo, tileMat, slots.length);
-    const m = new THREE.Matrix4(), c = new THREE.Color();
-    this.tilePhase = new Float32Array(slots.length);
-    for (let i = 0; i < slots.length; i++) {
-      m.makeTranslation(slots[i][0], 0.014, slots[i][1]);
-      tiles.setMatrixAt(i, m);
-      c.setHex(palette[i % palette.length]).lerp(TILE_BED, 0.30);
-      tiles.setColorAt(i, c);
-      this.tilePhase[i] = Math.hypot(slots[i][0], slots[i][1]) * 0.42;
-    }
-    tiles.instanceMatrix.needsUpdate = true;
-    tiles.instanceColor.needsUpdate = true;
-    tileGeo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(this.tilePhase, 1));
-    this.tiles = tiles;
-    this.tileMat = tileMat;
-    this.group.add(tiles);
+    const led = new THREE.Mesh(ledGeo, ledMat);
+    led.position.y = 0.006;
+    this.group.add(led);
+    this.ledMat = ledMat;
+    this._ledA = new THREE.Color(PINK);
+    this._ledB = new THREE.Color(CYAN);
 
     // A brass trim ring around the dance floor: it catches every light in the
     // room and draws the eye to where the fight is.
@@ -436,10 +345,12 @@ export class Arena {
 
     // Fairy lights strung across the ceiling: cheap, and the single fastest way
     // to make a room feel like a party.
-    const bulbGeo = new THREE.SphereGeometry(0.035, 7, 6);
-    const strandColors = [0xffd9a0, 0xffb0c8, 0xa0e8ff];
+    // Small, warm and dim. At full neon intensity the bloom pass turned every
+    // bulb into a white ball the size of a fist.
+    const bulbGeo = new THREE.SphereGeometry(0.016, 6, 5);
+    const strandColors = [0xffc98a, 0xffb487, 0xffd6a8];
     for (let s = 0; s < 3; s++) {
-      const bulbs = new THREE.InstancedMesh(bulbGeo, MAT.neon(strandColors[s], 5), 26);
+      const bulbs = new THREE.InstancedMesh(bulbGeo, MAT.neon(strandColors[s], 1.8), 26);
       const m = new THREE.Matrix4();
       const z0 = -5.2 + s * 3.6;
       for (let i = 0; i < 26; i++) {
@@ -622,9 +533,12 @@ export class Arena {
     this.pulse = Math.pow(Math.max(0, Math.sin(this.beat * Math.PI)), 7);
     this.energy = Math.max(0.22, this.energy - dt * 0.35);
 
-    if (this.tileMat) {
-      this.tileMat.uniforms.uBeat.value = this.beat;
-      this.tileMat.uniforms.uIntensity.value = 1.35 + this.pulse * 1.5 + this.energy * 0.5;
+    if (this.ledMat) {
+      // The strip breathes with the kick and drifts between the room's two
+      // colours over a phrase, which is all the beat needs to be felt.
+      const mixT = 0.5 + 0.5 * Math.sin(this.beat * Math.PI / 8);
+      this.ledMat.emissive.copy(this._ledA).lerp(this._ledB, mixT);
+      this.ledMat.emissiveIntensity = 1.2 + this.pulse * 2.6 + this.energy * 0.8;
     }
     // Contact shadows. The dance floor is a light source, so a shadow map is
     // only half the story: a soft blob under each fighter is what actually
