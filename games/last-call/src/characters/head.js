@@ -54,20 +54,20 @@ const lerp = (a, b, t) => a + (b - a) * t;
 
 // Eyeball placement in canonical head space. Exported so the builder can put
 // the eyeball exactly where the lids were cut for it.
-export const EYE = { x: 0.0315, y: 1.770, z: 0.057, r: 0.0122 };
+export const EYE = { x: 0.0315, y: 1.770, z: 0.0595, r: 0.0122 };
 
 // The palpebral fissure in angles around the eyeball centre: 'al' runs toward
 // the temple, 'ay' up. The upper lid peaks a little toward the nose and the
 // outer corner sits higher than the inner one, which is what stops an almond
 // from reading as a lemon.
-const AP_TURN = 0.12, AP_C = 0.10, AP_HW = 0.95;
+const AP_TURN = 0.14, AP_C = 0.12, AP_HW = 1.12;
 export function apertureUp(xi) {
   const e = Math.max(0, 1 - xi * xi);
-  return 0.37 * Math.pow(e, 0.55) * (1 - 0.18 * xi) + 0.06 * xi;
+  return 0.43 * Math.pow(e, 0.55) * (1 - 0.16 * xi) + 0.07 * xi;
 }
 export function apertureLo(xi) {
   const e = Math.max(0, 1 - xi * xi);
-  return -0.27 * Math.pow(e, 0.7) * (1 + 0.12 * xi) + 0.06 * xi;
+  return -0.37 * Math.pow(e, 0.75) * (1 + 0.12 * xi) + 0.07 * xi;
 }
 
 // Point on the lid margin for side s, xi in -1..1 across the eye, upper or
@@ -118,34 +118,40 @@ export function makeSculpt(f) {
     // The recession is a ramp, not a step, so the lid margin comes out of
     // interpolation as a smooth curve rather than a staircase of cells.
     const upperBoost = vy > 0 ? 0.0009 : 0.0;
-    const lidR = EYE.r + 0.0023 + upperBoost - 0.0068 * smooth01(open / 0.07);
+    const lidR = EYE.r + 0.0022 + upperBoost - 0.0070 * smooth01(open / 0.05);
     return r - lidR;
   }
 
   function head(x, y, z) {
     // Cranium, forehead plane and the occipital shelf that makes the back of
     // a real skull overhang the neck.
-    let d = sdEll(x, y, z, 0, 1.795, -0.012, 0.0745, 0.092, 0.099);
+    let d = sdEll(x, y, z, 0, 1.793, -0.012, 0.0745, 0.090, 0.099);
+    // Parietal breadth: the top of a real skull is broad and flat-ish, not
+    // the point of an egg.
+    d = smin(d, sdEll(x, y, z, 0, 1.826, -0.022, 0.071, 0.052, 0.080), 0.02);
     d = smin(d, sdEll(x, y, z, 0, 1.816, 0.030, 0.062, 0.055, 0.061), 0.02);
     d = smin(d, sdEll(x, y, z, 0, 1.776, -0.060, 0.058, 0.058, 0.052), 0.022);
     // Mid face: maxilla and the zygomatic arch.
     d = smin(d, sdEll(x, y, z, 0, 1.738, 0.030, 0.058 * jw, 0.050, 0.062), 0.024);
     for (let s = -1; s <= 1; s += 2) {
-      d = smin(d, sdEll(x, y, z, s * 0.049, 1.761, 0.049, 0.020 * CK, 0.012, 0.025), 0.014);
+      d = smin(d, sdEll(x, y, z, s * 0.048, 1.759, 0.044, 0.021 * CK, 0.012, 0.022), 0.02);
+      // Lower cheek: buccal fat over the masseter, so the muzzle runs into
+      // the jaw as one surface instead of a ball stuck on a skull.
+      d = smin(d, sdEll(x, y, z, s * 0.041, 1.721, 0.030, 0.022 * CK, 0.029, 0.034), 0.02);
       // Arch running back from the cheekbone toward the ear.
-      d = smin(d, sdCap(x, y, z, s * 0.052, 1.760, 0.040, s * 0.064, 1.757, -0.004, 0.009, 0.007), 0.012);
+      d = smin(d, sdCap(x, y, z, s * 0.050, 1.760, 0.040, s * 0.060, 1.757, -0.004, 0.008, 0.006), 0.012);
     }
     // Mandible: ramus down from under the ear, body forward to the chin.
     for (let s = -1; s <= 1; s += 2) {
-      const gx = s * 0.055 * J;
+      const gx = s * (0.050 + 0.028 * (J - 1));
       d = smin(d, sdCap(x, y, z, s * 0.056, 1.745, -0.021, gx, 1.692, -0.013, 0.012, 0.0145), 0.018);
       d = smin(d, sdCap(x, y, z, gx, 1.692, -0.013, s * 0.021 * CH, 1.668, 0.071, 0.0145, 0.013), 0.02);
     }
     d = smin(d, sdEll(x, y, z, 0, 1.6745, 0.072, 0.025 * CH, 0.0185, 0.019), 0.016);
     // Muzzle over the teeth, then lips and the parting line between them.
-    d = smin(d, sdEll(x, y, z, 0, 1.710, 0.050, 0.039, 0.031, 0.047), 0.02);
-    d = smin(d, sdEll(x, y, z, 0, 1.7125, 0.0865, 0.0235, 0.0068 * LP, 0.0115), 0.006);
-    d = smin(d, sdEll(x, y, z, 0, 1.6995, 0.0845, 0.0205, 0.0074 * LP, 0.0115), 0.006);
+    d = smin(d, sdEll(x, y, z, 0, 1.710, 0.048, 0.040, 0.032, 0.048), 0.026);
+    d = smin(d, sdEll(x, y, z, 0, 1.7125, 0.0858, 0.0235, 0.0066 * LP, 0.0115), 0.008);
+    d = smin(d, sdEll(x, y, z, 0, 1.6995, 0.0838, 0.0205, 0.0074 * LP, 0.0115), 0.008);
     d = smax(d, -sdEll(x, y, z, 0, 1.7058, 0.0985, 0.0225, 0.0010, 0.0135), 0.0022);
     // Chin furrow under the lower lip.
     d = smax(d, -sdEll(x, y, z, 0, 1.6885, 0.094, 0.016, 0.0035, 0.008), 0.006);
@@ -155,35 +161,50 @@ export function makeSculpt(f) {
     // Nose: bridge to tip, a break in the bridge for anyone who has been hit
     // there enough, then the wings.
     const nt = 0.111 + 0.004 * (NS - 1);
-    d = smin(d, sdCap(x, y, z, 0, 1.789, 0.0845, 0, 1.745, nt - 0.001, 0.0066, 0.0092 * NS), 0.007);
+    d = smin(d, sdCap(x, y, z, 0, 1.789, 0.0835, 0, 1.745, nt - 0.003, 0.0068, 0.0088 * NS), 0.012);
     if (NB > 0) d = smin(d, sdEll(x, y, z, NB * 0.0015, 1.772, 0.0955, 0.006, 0.006, 0.004 + 0.002 * NB), 0.004);
-    d = smin(d, sdEll(x, y, z, 0, 1.7405, nt - 0.002, 0.0100 * NS, 0.0090, 0.0105), 0.006);
+    d = smin(d, sdEll(x, y, z, 0, 1.7405, nt - 0.004, 0.0092 * NS, 0.0086, 0.0100), 0.008);
     for (let s = -1; s <= 1; s += 2) {
-      d = smin(d, sdEll(x, y, z, s * 0.0118 * NS, 1.7375, 0.0985, 0.0080, 0.0074, 0.0095), 0.006);
+      d = smin(d, sdEll(x, y, z, s * 0.0112 * NS, 1.7380, 0.0970, 0.0072, 0.0068, 0.0088), 0.009);
     }
     // Eye sockets, then the lids that sit in them.
     for (let s = -1; s <= 1; s += 2) {
-      d = smax(d, -sdEll(x, y, z, s * 0.0315, 1.7725, 0.074, 0.0172, 0.0128, 0.016), 0.008);
+      d = smax(d, -sdEll(x, y, z, s * 0.0320, 1.7725, 0.076, 0.0190, 0.0135, 0.016), 0.008);
     }
     for (let s = -1; s <= 1; s += 2) d = smin(d, lid(x, y, z, s), 0.0035);
     // Temples hollow in where the jaw muscle attaches.
     for (let s = -1; s <= 1; s += 2) {
-      d = smax(d, -sdEll(x, y, z, s * 0.075, 1.792, 0.034, 0.010, 0.020, 0.020), 0.012);
+      d = smax(d, -sdEll(x, y, z, s * 0.076, 1.792, 0.034, 0.007, 0.018, 0.018), 0.012);
     }
     return d;
   }
 
+  // Neck and the top of the shoulders. The base is the torso's last ring as a
+  // column with a rounded cap; the neck column rises out of it and the upper
+  // trapezius runs from the skull base down to the shoulder on each side, so
+  // the neck sits in a ramp of muscle instead of standing on a shelf.
+  const SH = f.SH ?? 1, MU = f.mu ?? 1;
   function neck(x, y, z) {
-    const t = Math.max(0, Math.min(1, (y - nb.y) / (top.y - nb.y)));
-    const w = lerp(nb.w, top.w, t), dd = lerp(nb.d, top.d, t);
-    const zc = lerp(nb.push, top.z, t);
-    let r = sdEll2(x, z - zc, w, dd);
-    r = Math.max(r, y - (top.y + 0.03));
-    // Sternocleidomastoids: the V from behind the ear to the collarbone notch
-    // is the single cue that says 'thick neck' rather than 'tube'.
+    const t = Math.max(0, Math.min(1, (y - 1.52) / (top.y - 1.52)));
+    const w = lerp(0.066 * NK, top.w, t), dd = lerp(0.061 * NK, top.d, t);
+    const zc = lerp(-0.004, top.z, t);
+    let r = Math.max(sdEll2(x, z - zc, w, dd), y - (top.y + 0.03));
+    const slab = y <= nb.y ? sdEll2(x, z - nb.push, nb.w, nb.d)
+      : sdEll(x, y, z, 0, nb.y, nb.push, nb.w, 0.022, nb.d);
+    r = smin(r, slab, 0.035);
+    const tr = Math.sqrt(MU);
     for (let s = -1; s <= 1; s += 2) {
-      r = smin(r, sdCap(x, y, z, s * 0.046 * NK, 1.736, -0.028, s * 0.015, nb.y + 0.018,
-        nb.push + nb.d * 0.74, 0.0125 * NK, 0.0085 * NK), 0.02);
+      // Upper trapezius in two runs: down the back of the neck from the skull,
+      // then out to the shoulder. Seen from the front that makes the concave
+      // sweep from neck to shoulder, with the neck column standing in front
+      // of it, instead of a straight cone from shoulder to jaw.
+      const kx = s * 0.047 * NK, ky = 1.585, kz = -0.046;
+      r = smin(r, sdCap(x, y, z, s * 0.020 * NK, 1.712, -0.056, kx, ky, kz, 0.018 * NK * tr, 0.023 * NK * tr), 0.022);
+      r = smin(r, sdCap(x, y, z, kx, ky, kz, s * 0.128 * SH, 1.506, -0.022, 0.023 * NK * tr, 0.020 * tr), 0.03);
+      // Sternocleidomastoids: the V from behind the ear to the collarbone
+      // notch is the single cue that says 'thick neck' rather than 'tube'.
+      r = smin(r, sdCap(x, y, z, s * 0.046 * NK, 1.736, -0.028, s * 0.016, nb.y - 0.004,
+        nb.push + nb.d * 0.80, 0.0125 * NK, 0.009 * NK), 0.018);
     }
     return r;
   }
@@ -243,14 +264,14 @@ function makeWarp(lo, hi, density, n = 4096) {
 }
 
 const PHI1 = -1.05, PHI2 = 1.50;
-const ROWS_NECK = 8, ROWS_HEAD = 46;
+const ROWS_NECK = 8, ROWS_HEAD = 38;
 
 // torsoTop: the torso's last ring (uniform angles). neckBase: its node.
 export function buildHeadGrid(sdf, torsoTop, neckBase) {
   const nu = torsoTop.length;
-  const colWarp = makeWarp(-Math.PI, Math.PI, (th) => 1 + 1.55 * Math.exp(-(th / 0.78) ** 2)
-    + 0.35 * Math.exp(-((Math.abs(th) - 1.6) / 0.35) ** 2));
-  const rowWarp = makeWarp(PHI1, PHI2, (ph) => 1 + 1.9 * Math.exp(-((ph + 0.10) / 0.52) ** 2));
+  const colWarp = makeWarp(-Math.PI, Math.PI, (th) => 1 + 1.55 * Math.exp(-((th / 0.78) ** 2))
+    + 0.35 * Math.exp(-(((Math.abs(th) - 1.6) / 0.35) ** 2)));
+  const rowWarp = makeWarp(PHI1, PHI2, (ph) => 1 + 1.9 * Math.exp(-(((ph + 0.10) / 0.52) ** 2)));
   const C = HEAD_C;
   const rings = [];
   const dirs = [];     // [th, ph] per ring per column, for painting fields
@@ -332,20 +353,29 @@ export function buildShell(sdf, o) {
   return { rings, cover };
 }
 
-// Smooth periodic interpolation through (angle, value) keys on |th|, used for
-// hairlines and beard lines so they can be tuned as a handful of numbers.
+// Smooth interpolation through (angle, value) keys on |th|, used for
+// hairlines, beard lines and necklines so each can be tuned as a handful of
+// numbers. Catmull-Rom rather than smoothstep per span: smoothstep flattens
+// at every key and turns a curved neckline into a row of little plateaus.
 export function profile(keys) {
+  const n = keys.length;
+  const slope = (i) => {
+    const a = keys[Math.max(0, i - 1)], c = keys[Math.min(n - 1, i + 1)];
+    return c[0] > a[0] ? (c[1] - a[1]) / (c[0] - a[0]) : 0;
+  };
   return (th) => {
     const a = Math.abs(th);
     if (a <= keys[0][0]) return keys[0][1];
-    for (let i = 1; i < keys.length; i++) {
+    for (let i = 1; i < n; i++) {
       if (a <= keys[i][0]) {
         const k0 = keys[i - 1], k1 = keys[i];
-        const t = smooth01((a - k0[0]) / (k1[0] - k0[0]));
-        return k0[1] + (k1[1] - k0[1]) * t;
+        const h = k1[0] - k0[0], t = (a - k0[0]) / h;
+        const t2 = t * t, t3 = t2 * t;
+        return (2 * t3 - 3 * t2 + 1) * k0[1] + (t3 - 2 * t2 + t) * h * slope(i - 1)
+          + (-2 * t3 + 3 * t2) * k1[1] + (t3 - t2) * h * slope(i);
       }
     }
-    return keys[keys.length - 1][1];
+    return keys[n - 1][1];
   };
 }
 
@@ -360,9 +390,9 @@ export function buildEar(s, H) {
   upv.addScaledVector(n, -upv.dot(n)).normalize();
   const fw = new THREE.Vector3().crossVectors(upv, n);
   if (fw.z < 0) fw.negate();
-  const c = new THREE.Vector3(s * 0.0655 * H, HEAD_C.y + (1.761 - HEAD_C.y) * H, HEAD_C.z + (-0.0085 - HEAD_C.z) * H);
+  const c = new THREE.Vector3(s * 0.0712 * H, HEAD_C.y + (1.761 - HEAD_C.y) * H, HEAD_C.z + (-0.0100 - HEAD_C.z) * H);
   const A = 0.0315 * H, B = 0.0175 * H;
-  const sides = 22;
+  const sides = 18;
   const outline = (ps) => {
     // Wider at the top, pinched to a lobe at the bottom.
     const ca = Math.cos(ps), sa = Math.sin(ps);
@@ -377,7 +407,7 @@ export function buildEar(s, H) {
     const a = a0 * rho, b = b0 * rho;
     // Stand-off: flush at the front edge, well off the skull at the back.
     const back01 = smooth01((-b / B + 1) * 0.5);
-    let h = 0.0035 * H + back01 * 0.0125 * H;
+    let h = 0.0028 * H + back01 * 0.0150 * H;
     if (face === 'out') {
       h += 0.0028 * H * bump((rho - 0.90) / 0.12);                           // helix
       h += 0.0012 * H * bump((rho - 0.62) / 0.12) * smooth01((a0 + A * 0.2) / (A * 0.8)); // antihelix
@@ -387,7 +417,7 @@ export function buildEar(s, H) {
     } else if (face === 'rim') {
       h -= 0.0016 * H;
     } else {
-      h = h * 0.55 - 0.0035 * H;
+      h = h * 0.62 - 0.0040 * H;
     }
     return new THREE.Vector3().copy(c).addScaledVector(upv, a).addScaledVector(fw, b).addScaledVector(n, h);
   };

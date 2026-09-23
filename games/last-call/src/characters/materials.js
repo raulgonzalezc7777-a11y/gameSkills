@@ -95,8 +95,8 @@ export function makeSkinCanvas(tone, seed, size = 1024) {
     const r = Math.max(0, red(u, v) - 0.48) * 2 * redAmt;
     return [
       base[0] * (1 + b) * (1 + r * 0.25),
-      base[1] * (1 + b) * (1 - r * 0.55),
-      base[2] * (1 + b) * (1 - r * 0.45)
+      base[1] * (1 + b) * (1 - r * 0.35),
+      base[2] * (1 + b) * (1 - r * 0.30)
     ];
   });
   const grainCanvas = fill(256, 256, (u, v) => {
@@ -115,25 +115,26 @@ export function makeSkinCanvas(tone, seed, size = 1024) {
   return { canvas: c, ctx, size };
 }
 
-// Fine surface detail shared by every fighter: pore dimples and cross-hatched
-// micro creases in the normal, and a slow roughness drift so a highlight
+// Fine surface detail shared by every fighter: pore dimples and a soft
+// isotropic grain in the normal, and a slow roughness drift so a highlight
 // breaks up across a shoulder instead of sliding over it like on a mannequin.
+// Nothing here is directional: ridged noise in a skin normal shows up in every
+// highlight as brushed metal.
 function skinDetail() {
   return memo('skin-detail', () => {
     const N = 512;
-    const pore = valueNoise2D(71, 96);
-    const crease = fbm2D(73, 3, 24, 0.5);
-    const fine = fbm2D(79, 2, 128, 0.5);
+    const pore = valueNoise2D(71, 128);
+    const grain = fbm2D(73, 3, 32, 0.5);
+    const fine = fbm2D(79, 2, 160, 0.5);
     const H = new Float32Array(N * N);
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const u = x / N, v = y / N;
       const p = pore(u, v);
-      const cr = Math.abs(crease(u, v) - 0.5);
-      H[y * N + x] = -Math.pow(Math.max(0, p - 0.62) * 2.6, 2) * 0.8 + cr * 0.5 + fine(u, v) * 0.35;
+      H[y * N + x] = -Math.pow(Math.max(0, p - 0.66) * 3.0, 2) * 0.7 + grain(u, v) * 0.35 + fine(u, v) * 0.3;
     }
-    const normal = normalCanvas(N, N, H, 1.6);
+    const normal = normalCanvas(N, N, H, 1.3);
     const drift = fbm2D(83, 3, 3, 0.6);
-    const orm = fill(256, 256, (u, v) => [255, (0.84 + drift(u, v) * 0.16) * 255, 0]);
+    const orm = fill(256, 256, (u, v) => [255, (0.86 + drift(u, v) * 0.14) * 255, 0]);
     return { normal, orm };
   });
 }
@@ -191,22 +192,26 @@ const SKIN_DIRECT = [
 // colour because oil does not change what colour skin is.
 const SKIN_ROUGH = [
   '#include <roughnessmap_fragment>',
-  'roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.66, vAux.y );',
+  'roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.88, vAux.y );',
   'wetMask = uSweat * max( vWetZone, vAux.y );',
   '#ifdef USE_ROUGHNESSMAP',
   '  wetMask *= 0.55 + 0.45 * texture2D( roughnessMap, vRoughnessMapUv ).g;',
   '#endif',
   'wetMask = clamp( wetMask, 0.0, 1.0 );',
-  'roughnessFactor = mix( roughnessFactor, 0.16, wetMask );'
+  'roughnessFactor = mix( roughnessFactor, 0.24, wetMask );'
 ].join('\n');
 
 // Skin F0 is about 0.028, a touch under the standard dielectric 0.04. Wet skin
 // darkens because water fills the micro relief that scattered light back out.
 // The standard program feeds diffuseContribution, not diffuseColor, to the
 // lighting, so that is the one that has to be darkened.
+// Grazing reflectance is held well under the mirror limit: a rough, scattering
+// surface never reaches it, and on dark skin under coloured lights a full F90
+// rim is what turns a face into chrome.
 const SKIN_SPEC = [
   '#include <lights_physical_fragment>',
   'material.specularColor = vec3( mix( 0.028, 0.045, wetMask ) );',
+  'material.specularF90 = mix( 0.5, 0.85, wetMask );',
   'material.specularColorBlended = material.specularColor;',
   'material.diffuseContribution *= mix( 1.0, 0.80, wetMask );'
 ].join('\n');
@@ -214,22 +219,28 @@ const SKIN_SPEC = [
 const SKIN_INDIRECT = [
   '#include <lights_fragment_end>',
   'float skinNdv = saturate( dot( normal, geometryViewDir ) );',
-  'reflectedLight.indirectDiffuse *= vec3( 1.05, 0.985, 0.965 );',
+  'reflectedLight.indirectDiffuse *= vec3( 1.03, 0.99, 0.98 );',
   'reflectedLight.indirectDiffuse += uSSSColor * ( pow( 1.0 - skinNdv, 3.0 ) * uSSSIntensity ) * material.diffuseContribution;'
 ].join('\n');
 
 export function makeSkinMaterial(skinTexture, opts = {}) {
   const det = skinDetail();
-  const rep = opts.poreRepeat ?? 10;
+  const rep = opts.poreRepeat ?? 16;
+  // Environment reflection scales with tone: on dark skin the diffuse term is
+  // small, so the same reflection that reads as a sheen on pale skin turns a
+  // dark face into chrome under coloured club lights.
+  const tone = new THREE.Color(opts.tone ?? '#c08055');
+  const L = tone.r * 0.3 + tone.g * 0.59 + tone.b * 0.11;
+  const baseRough = opts.roughness ?? 0.62;
   const mat = new THREE.MeshStandardMaterial({
     map: skinTexture,
     normalMap: tex(det.normal, { repeat: [rep, rep] }),
     roughnessMap: tex(det.orm, { repeat: [3, 3] }),
-    roughness: opts.roughness ?? 0.60,
+    roughness: baseRough,
     metalness: 0.0,
-    envMapIntensity: opts.envMapIntensity ?? 0.9
+    envMapIntensity: opts.envMapIntensity ?? (0.45 + 0.25 * Math.min(1, L / 0.6))
   });
-  mat.normalScale.set(0.32, 0.32);
+  mat.normalScale.set(0.14, 0.14);
   mat.name = 'skin';
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uSweat = { value: mat.userData.sweat ?? 0 };
@@ -329,8 +340,12 @@ export function makeClothMaterial(color, opts = {}) {
     metalness: 0.0,
     sheen: opts.sheen ?? 0.55,
     sheenRoughness: opts.sheenRoughness ?? 0.6,
-    sheenColor: new THREE.Color(opts.sheenColor ?? '#ffffff'),
-    envMapIntensity: opts.envMapIntensity ?? 0.75
+    // Fibre backscatter takes the colour of the fibre: a white sheen lobe
+    // over red cotton reads as grey dust, not as cloth.
+    sheenColor: new THREE.Color(opts.sheenColor ?? color).lerp(new THREE.Color('#ffffff'), opts.sheenColor ? 0 : 0.2),
+    envMapIntensity: opts.envMapIntensity ?? 0.75,
+    // Matte fibres scatter what a smooth dielectric would mirror at grazing.
+    specularIntensity: kind === 'satin' ? 0.85 : 0.45
   });
   mat.normalScale.set(opts.normalScale ?? 0.6, opts.normalScale ?? 0.6);
   mat.name = opts.name ?? 'cloth';
@@ -388,8 +403,11 @@ function hairBundle(color, seed, style) {
     for (let r = 0; r < idx.length; r++) T[idx[r]] = r / (idx.length - 1);
     const map = fill(N, N, (u, v, x, y) => {
       const s = H[y * N + x];
-      const k = 0.72 + s * 0.5;
-      return [base[0] * k, base[1] * k, base[2] * k, T[y * N + x] * 255];
+      // A few strands catch light well above the base tone; black hair is
+      // never one flat black.
+      const stray = rng() < 0.06 ? 0.9 : 0;
+      const k = 0.70 + s * 0.55 + stray;
+      return [Math.min(255, base[0] * k + 6), Math.min(255, base[1] * k + 5), Math.min(255, base[2] * k + 4), T[y * N + x] * 255];
     });
     const normal = normalCanvas(N, N, H, style === 'afro' ? 3.0 : 2.4);
     return { map, normal };
@@ -400,25 +418,32 @@ const HAIR_VERT = [
   '#include <begin_vertex>',
   'vHairCover = aux.x;'
 ].join('\n');
+// Coverage also thins toward the silhouette by uFuzz, which is what turns an
+// afro from a clay cap into something with a soft edge against the light.
 const HAIR_FRAG = [
   '#include <map_fragment>',
-  'if ( vHairCover <= texture2D( map, vMapUv ).a * 0.985 + 0.01 ) discard;',
+  'float hairEdge = 1.0 - abs( dot( normalize( vNormal ), normalize( vViewPosition ) ) );',
+  'float hairCov = vHairCover * ( 1.0 - uFuzz * hairEdge * hairEdge );',
+  'if ( hairCov <= texture2D( map, vMapUv ).a * 0.985 + 0.01 ) discard;',
   'diffuseColor.a = 1.0;'
 ].join('\n');
 
 export function makeHairMaterial(color, seed, style = 'short') {
   const b = hairBundle(color, seed, style);
   const rep = style === 'afro' ? [5, 3] : [4, 2];
-  const lift = new THREE.Color(color).lerp(new THREE.Color('#8a7060'), 0.35);
+  const lift = new THREE.Color(color).lerp(new THREE.Color('#6a5040'), 0.25);
   const mat = new THREE.MeshPhysicalMaterial({
     map: tex(b.map, { srgb: true, repeat: rep }),
     normalMap: tex(b.normal, { repeat: rep }),
-    roughness: style === 'afro' ? 0.78 : 0.55,
+    roughness: style === 'afro' ? 0.72 : style === 'beard' ? 0.48 : 0.5,
     metalness: 0.0,
-    sheen: style === 'afro' ? 0.9 : 0.6,
+    sheen: style === 'afro' ? 0.22 : 0.4,
     sheenRoughness: 0.45,
     sheenColor: lift,
-    envMapIntensity: 0.7,
+    envMapIntensity: 0.45,
+    // Coiled hair traps light between strands; a straight crop still has a
+    // sheen but nothing like a mirror.
+    specularIntensity: style === 'afro' ? 0.35 : 0.65,
     // A small pull toward the camera keeps the thinnest part of the shell,
     // where it lies almost on the scalp, from fighting the skin for depth.
     polygonOffset: true,
@@ -431,11 +456,12 @@ export function makeHairMaterial(color, seed, style = 'short') {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec2 aux;\nvarying float vHairCover;')
       .replace('#include <begin_vertex>', HAIR_VERT);
+    shader.uniforms.uFuzz = { value: style === 'afro' ? 0.9 : style === 'beard' ? 0.3 : 0.15 };
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vHairCover;')
+      .replace('#include <common>', '#include <common>\nvarying float vHairCover;\nuniform float uFuzz;')
       .replace('#include <map_fragment>', HAIR_FRAG);
   };
-  mat.customProgramCacheKey = () => 'fighter-hair-v2';
+  mat.customProgramCacheKey = () => 'fighter-hair-v3';
   return mat;
 }
 
@@ -449,28 +475,44 @@ export function makeEyeMaterial(irisColor = '#3a2a1c', seed = 1) {
     const W = 256, Hh = 128;
     const iris = rgbOf(irisColor);
     const fib = valueNoise2D(seed + 41, 64);
+    const fleck = valueNoise2D(seed + 43, 24);
     return fill(W, Hh, (u, v) => {
-      const lat = 1 - v;             // 1 at the forward pole (top of the canvas is v = 0 here)
-      const ang = (1 - lat) * 180;   // degrees from the pole
-      if (ang < 9.5) return [8, 6, 5];
-      if (ang < 29) {
-        const f = fib(u, ang / 29);
-        const k = 0.55 + f * 0.7 - Math.max(0, (ang - 25) / 4) * 0.55;
-        const inner = ang < 14 ? 0.8 : 1.0;
-        return [iris[0] * k * inner, iris[1] * k * inner, iris[2] * k * inner];
+      const ang = v * 180;                      // degrees from the forward pole
+      const phi = u * Math.PI * 2;
+      // World up on the eyeball once its pole is turned forward. The eye never
+      // rotates against its lids, so the shadow the upper lid and lashes throw
+      // across the top of the eyeball can be baked right here.
+      const up = -Math.sin(phi) * Math.sin(ang * Math.PI / 180);
+      const lidShade = 1 - 0.55 * Math.min(1, Math.max(0, (up + 0.05) / 0.45)) - 0.2 * Math.min(1, Math.max(0, (-up - 0.30) / 0.3));
+      let col;
+      if (ang < 9) col = [6, 5, 5];
+      else if (ang < 29) {
+        // Radial fibres, a lighter collarette ring round the pupil and a dark
+        // limbal ring at the edge: the three things that make an iris read as
+        // an iris and not a painted disc.
+        const r = (ang - 9) / 20;
+        const f = fib(u * 4 % 1, r * 0.3);
+        const coll = Math.exp(-(((r - 0.22) / 0.12) ** 2)) * 0.35;
+        const k = (1.15 + (f - 0.5) * 0.9 + coll + (fleck(u, r) - 0.5) * 0.3) * (1 - Math.pow(Math.max(0, r - 0.78) / 0.22, 1.5) * 0.75);
+        // Roster eye colours are the tone a person reads at a glance; the iris
+        // itself sits in the socket's shadow, so its albedo runs well above it.
+        col = [Math.min(255, iris[0] * k * 2.3), Math.min(255, iris[1] * k * 2.3), Math.min(255, iris[2] * k * 2.3)];
+      } else {
+        const t = Math.min(1, (ang - 29) / 45);
+        const limbal = Math.max(0, 1 - (ang - 29) / 4) * 0.3;
+        col = [(176 - t * 46) * (1 - limbal), (164 - t * 64) * (1 - limbal), (154 - t * 66) * (1 - limbal)];
       }
-      const t = Math.min(1, (ang - 29) / 60);
-      return [226 - t * 18, 214 - t * 30, 204 - t * 30];
+      return [col[0] * lidShade, col[1] * lidShade, col[2] * lidShade];
     });
   });
   const t = tex(c, { srgb: true, wrap: false });
   const mat = new THREE.MeshPhysicalMaterial({
     map: t,
-    roughness: 0.32,
+    roughness: 0.4,
     metalness: 0.0,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.03,
-    envMapIntensity: 1.1
+    clearcoat: 0.7,
+    clearcoatRoughness: 0.08,
+    envMapIntensity: 0.5
   });
   mat.name = 'eye';
   return mat;

@@ -118,6 +118,15 @@ export function paintFace(P, o) {
   // Scalp. Hair roots darken the skin under the shell, and a shaved or thin
   // patch still carries that shadow, so the hairline reads soft from any
   // distance even where the shell has dithered away.
+  // A shaved head still carries the ghost of its hairline: follicles under
+  // pale skin read as a faint cool shadow over the crown.
+  if (o.bald) {
+    const sc = skin.clone().lerp(hair, 0.5).lerp(new THREE.Color('#556070'), L > 0.45 ? 0.2 : 0);
+    P.field((th, ph) => {
+      const c = o.baldCover(th, ph);
+      return [sc.r, sc.g, sc.b, c * (L > 0.45 ? 0.22 : 0.10)];
+    }, 'source-over', 2);
+  }
   if (o.hairCover) {
     const sc = skin.clone().lerp(hair, 0.78);
     P.field((th, ph) => {
@@ -128,12 +137,13 @@ export function paintFace(P, o) {
 
   // Flush: nose, cheeks, ears and chin carry more blood than the forehead.
   // Pale skin shows it as pink, dark skin as a deeper warm brown.
-  const flush = L > 0.45 ? new THREE.Color('#c0584c') : new THREE.Color('#7a3526');
+  const flush = L > 0.45 ? new THREE.Color('#c0584c') : skin.clone().lerp(new THREE.Color('#9a4030'), 0.45);
+  const flushAmt = L > 0.45 ? 0.30 : 0.18;
   P.field((th, ph, p) => {
     const cheek = Math.exp(-(((Math.abs(th) - 0.55) / 0.22) ** 2) - ((ph + 0.12) / 0.16) ** 2);
     const nose = Math.exp(-((th / 0.14) ** 2) - ((ph + 0.18) / 0.14) ** 2);
     const ear = Math.exp(-(((Math.abs(th) - 1.62) / 0.18) ** 2) - ((ph + 0.02) / 0.3) ** 2);
-    const a = Math.min(1, cheek * 0.55 + nose * 0.6 + ear * 0.5) * 0.30;
+    const a = Math.min(1, cheek * 0.55 + nose * 0.6 + ear * 0.5) * flushAmt;
     return [flush.r, flush.g, flush.b, a];
   }, 'source-over', 2);
 
@@ -188,7 +198,7 @@ export function paintFace(P, o) {
       up.push([pu.x, pu.y, pu.z]);
       lo.push([pl.x, pl.y, pl.z]);
     }
-    P.stroke(up, 2.6, 'rgba(24,14,10,0.85)');
+    P.stroke(up, 3.6, 'rgba(20,12,9,0.9)');
     P.stroke(lo, 1.2, 'rgba(60,34,28,0.45)');
   }
 

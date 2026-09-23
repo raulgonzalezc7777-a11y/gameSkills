@@ -1,8 +1,8 @@
 import { clamp01 } from '../core/math.js';
 
-// Everything that happens to a fighter's surface after it is built: the face
-// features painted into the skin atlas at boot, the tattoos one of them wears,
-// and the bruising, cuts and blood that accumulate over a round.
+// Everything that happens to a fighter's surface after it is built: the
+// tattoos one of them wears, and the bruising, cuts and blood that accumulate
+// over a round. The face itself is painted by face.js.
 //
 // All of it composites onto a per-fighter copy of the skin canvas, so two
 // fighters sharing a skin tone never share each other's damage. The GPU
@@ -35,90 +35,6 @@ function blob(ctx, x, y, rx, ry, rot, stops) {
   ctx.beginPath();
   ctx.arc(0, 0, rx, 0, Math.PI * 2);
   ctx.fill();
-  ctx.restore();
-}
-
-// ------------------------------------------------------------ face pass ----
-
-// Brows, lids, lips, nostrils and stubble are painted rather than modelled.
-// At four metres a painted brow reads exactly as well as a geometric one and
-// costs no triangles, and it lets the shape follow the head's curvature for
-// free instead of needing a separately fitted strip.
-export function paintFace(ctx, size, lm) {
-  const S = size;
-  const X = (u) => px(u, S), Y = (v) => py(v, S);
-  const unit = lm.unit * S;          // one head-width in canvas pixels
-
-  ctx.save();
-
-  // Socket shading. A dark wash under the brow is what makes eyes read as
-  // recessed even before the geometry is lit.
-  for (const e of [lm.eyeL, lm.eyeR]) {
-    blob(ctx, X(e[0]), Y(e[1]) - unit * 0.02, unit * 0.30, unit * 0.22, 0, [
-      [0, 'rgba(58,30,22,0.42)'], [0.55, 'rgba(70,40,30,0.20)'], [1, 'rgba(90,60,45,0)']
-    ]);
-  }
-
-  // Eyebrows: a tapered arc of short strokes, thicker at the inner end.
-  ctx.lineCap = 'round';
-  for (const [e, dir] of [[lm.eyeL, -1], [lm.eyeR, 1]]) {
-    const cx = X(e[0]), cy = Y(e[1]) - unit * 0.155;
-    for (let i = 0; i < 16; i++) {
-      const t = i / 15;
-      const ang = (-0.55 + t * 1.1) * dir;
-      const x = cx + Math.sin(ang) * unit * 0.30;
-      const y = cy - Math.cos(ang) * unit * 0.055 + unit * 0.05 * t * t;
-      ctx.strokeStyle = 'rgba(34,22,16,' + (0.85 - t * 0.35).toFixed(3) + ')';
-      ctx.lineWidth = unit * (0.055 - t * 0.026);
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + dir * unit * 0.035, y - unit * 0.012);
-      ctx.stroke();
-    }
-  }
-
-  // Lash line and lower lid.
-  for (const e of [lm.eyeL, lm.eyeR]) {
-    ctx.strokeStyle = 'rgba(26,16,12,0.70)';
-    ctx.lineWidth = unit * 0.022;
-    ctx.beginPath();
-    ctx.ellipse(X(e[0]), Y(e[1]), unit * 0.135, unit * 0.075, 0, Math.PI * 1.02, Math.PI * 1.98);
-    ctx.stroke();
-  }
-
-  // Lips. Upper is darker than lower because it faces away from the key light
-  // on a real face, and that read survives into the texture.
-  const mx = X(lm.mouth[0]), my = Y(lm.mouth[1]);
-  blob(ctx, mx, my, unit * 0.30, unit * 0.13, 0, [
-    [0, 'rgba(146,72,64,0.55)'], [0.6, 'rgba(150,80,70,0.28)'], [1, 'rgba(150,90,80,0)']
-  ]);
-  ctx.strokeStyle = 'rgba(70,32,28,0.72)';
-  ctx.lineWidth = unit * 0.026;
-  ctx.beginPath();
-  ctx.moveTo(mx - unit * 0.22, my);
-  ctx.quadraticCurveTo(mx - unit * 0.10, my - unit * 0.035, mx, my - unit * 0.005);
-  ctx.quadraticCurveTo(mx + unit * 0.10, my - unit * 0.035, mx + unit * 0.22, my);
-  ctx.stroke();
-
-  // Nostrils.
-  for (const s of [-1, 1]) {
-    blob(ctx, X(lm.nose[0]) + s * unit * 0.085, Y(lm.nose[1]), unit * 0.045, unit * 0.030, 0, [
-      [0, 'rgba(38,20,16,0.85)'], [1, 'rgba(60,34,26,0)']
-    ]);
-  }
-
-  // Stubble across jaw, chin and upper lip.
-  if (lm.stubble > 0) {
-    const jx = X(lm.chin[0]), jy = Y(lm.chin[1]);
-    ctx.globalCompositeOperation = 'multiply';
-    blob(ctx, jx, jy - unit * 0.10, unit * 0.62, unit * 0.40, 0, [
-      [0, 'rgba(120,112,116,' + (0.55 * lm.stubble).toFixed(3) + ')'],
-      [0.7, 'rgba(150,142,146,' + (0.28 * lm.stubble).toFixed(3) + ')'],
-      [1, 'rgba(255,255,255,0)']
-    ]);
-    ctx.globalCompositeOperation = 'source-over';
-  }
-
   ctx.restore();
 }
 
