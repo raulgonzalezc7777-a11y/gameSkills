@@ -81,6 +81,11 @@ void main() {
   // later sample, including the ghost, lands in the warped frame.
   vec2 uv = vUv;
   if (uDrunk > 0.001) {
+    // The barrel push, the swim and the roll all move the corners outward,
+    // and a sample past the edge clamps into a smeared streak. Zooming in by
+    // the worst case keeps every sample on screen.
+    c *= 1.0 / (1.0 + uDrunk * 0.16);
+    r2 = dot(c, c);
     uv = 0.5 + c * (1.0 + uDrunk * 0.18 * r2)
        + vec2(sin(uTime * 0.83), cos(uTime * 0.61)) * 0.006 * uDrunk;
     float roll = sin(uTime * 0.37) * 0.035 * uDrunk;

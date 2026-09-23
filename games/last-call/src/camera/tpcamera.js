@@ -47,7 +47,10 @@ export class TPCamera {
     // Orbit angle: behind the player, biased so the opponent stays framed.
     _dir.copy(_b).sub(_a);
     const duelYaw = Math.atan2(_dir.x, _dir.z);
-    this.yaw = dampAngle(this.yaw, duelYaw + Math.PI + lookInput.x * 0.0, 5.0, dt) + lookInput.x * dt * 2.4;
+    // Swing about thirty degrees off the line between the fighters. Straight
+    // behind the player, the player's own body hides the opponent in every
+    // exchange; off-axis, both heads read and the space between them shows.
+    this.yaw = dampAngle(this.yaw, duelYaw + Math.PI + CFG.camera.orbitOffset, 5.0, dt) + lookInput.x * dt * 2.4;
     this.pitch = clamp(this.pitch + lookInput.y * dt * 1.6, -0.35, 0.5);
 
     // Pull back as the fighters separate so both always read.
@@ -92,7 +95,9 @@ export class TPCamera {
       if (room) {
         _c.x = clamp(_c.x, -room.hx + 0.5, room.hx - 0.5);
         _c.z = clamp(_c.z, -room.hz + 0.5, room.hz - 0.5);
-        _c.y = clamp(_c.y, 0.65, room.h - 0.45);
+        // Stay under the truss. Up among the lamps, a pulled-out camera put a
+        // blown lens the size of a door in the foreground.
+        _c.y = clamp(_c.y, 0.65, room.h - 1.25);
       } else {
         const r = Math.hypot(_c.x, _c.z);
         const lim = (this.arena.radius ?? 8) + 1.6;

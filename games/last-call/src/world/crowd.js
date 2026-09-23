@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { rng } from '../core/rng.js';
 import { bus, EV } from '../core/events.js';
 import { clamp01, expDamp, TAU } from '../core/math.js';
+import { TEX } from '../render/texlib.js';
 
 // The punters. One InstancedMesh, one draw call, a few hundred bodies, all
 // animated on the GPU from instanced attributes. The CPU only ever writes a
@@ -26,61 +27,197 @@ function tag(geo, part, arm = 0) {
   geo.setAttribute('aArm', new THREE.BufferAttribute(a, 1));
   // A dummy vertex colour keeps USE_COLOR defined so the fragment stage
   // actually multiplies by the per-instance palette we compute in vColor.
-  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
+  if (!geo.attributes.color) {
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
+  }
   if (!geo.attributes.uv) {
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
   }
   return geo;
 }
 
-// Rounded volumes only. The first crowd was built from boxes, and a box is the
-// one shape a human body never makes: the moment the camera came near a punter
-// the frame read as a toy. Capsules and spheres at low segment counts cost a
-// few hundred triangles more per body and read as people at every distance.
-const piece = (geo, x, y, z, part, arm = 0, sx = 1, sy = 1, sz = 1, rx = 0) => {
-  if (sx !== 1 || sy !== 1 || sz !== 1) geo.scale(sx, sy, sz);
-  if (rx) geo.rotateX(rx);
-  geo.translate(x, y, z);
-  return tag(geo, part, arm);
-};
-const cap = (r, len, seg = 7) => new THREE.CapsuleGeometry(r, len, 2, seg);
-const ball = (r, w = 10, h = 8) => new THREE.SphereGeometry(r, w, h);
+// Continuous surfaces. The first crowd was boxes, the second was capsules and
+// spheres glued at the joints, and a reviewer failed both for the same reason:
+// primitives read as primitives the moment the camera comes near. A punter is
+// now lofted like the fighters are: one tube from the hips through the chest,
+// shoulders, neck and skull, and one per limb with a thigh, a knee, a calf, a
+// biceps and a forearm in its radius profile. Ambient occlusion is baked into
+// the vertex colour, so armpits, crotch and the underside of the jaw darken.
+//
+// ring: { c: [x, y, z], rx, rz, ao, part }
+function loft(rings, seg, arm = 0, capStart = true, capEnd = true, shape = null) {
+  const pos = [], nor = [], uv = [], col = [], parts = [], idx = [];
+  const n = rings.length;
+  const C = (i) => new THREE.Vector3(...rings[Math.max(0, Math.min(n - 1, i))].c);
+  const frames = [];
+  for (let i = 0; i < n; i++) {
+    const t = C(i + 1).sub(C(i - 1)).normalize();
+    const ref = Math.abs(t.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
+    const n1 = ref.sub(t.clone().multiplyScalar(ref.dot(t))).normalize();
+    const n2 = new THREE.Vector3().crossVectors(t, n1).normalize();
+    frames.push({ t, n1, n2 });
+  }
+  for (let i = 0; i < n; i++) {
+    const r = rings[i], f = frames[i], c = C(i);
+    for (let j = 0; j <= seg; j++) {
+      const a = (j / seg) * Math.PI * 2;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const sh = shape ? shape(i, a) : null;
+      const push = sh ? sh.push : 1;
+      pos.push(c.x + (f.n1.x * ca * r.rx + f.n2.x * sa * r.rz) * push,
+               c.y + (f.n1.y * ca * r.rx + f.n2.y * sa * r.rz) * push,
+               c.z + (f.n1.z * ca * r.rx + f.n2.z * sa * r.rz) * push);
+      // Analytic ellipse normal: no seam where the ring closes on itself,
+      // which a computed normal would leave as a crease down every limb.
+      const nx = ca / r.rx, ny = sa / r.rz, l = Math.hypot(nx, ny) || 1;
+      const N = f.n1.clone().multiplyScalar(nx / l).add(f.n2.clone().multiplyScalar(ny / l));
+      nor.push(N.x, N.y, N.z);
+      uv.push(j / seg, i / (n - 1));
+      const ao = r.ao * (sh ? sh.ao : 1);
+      col.push(ao, ao, ao);
+      parts.push(r.part);
+    }
+  }
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = 0; j < seg; j++) {
+      const a = i * (seg + 1) + j, b = a + 1, c = a + seg + 1, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  const cap = (ri, flip) => {
+    const r = rings[ri], f = frames[ri], c = C(ri);
+    const centre = pos.length / 3;
+    const dir = flip ? f.t.clone().negate() : f.t;
+    pos.push(c.x, c.y, c.z); nor.push(dir.x, dir.y, dir.z); uv.push(0.5, ri / (n - 1));
+    col.push(r.ao, r.ao, r.ao); parts.push(r.part);
+    const base = ri * (seg + 1);
+    for (let j = 0; j < seg; j++) {
+      if (flip) idx.push(centre, base + j, base + j + 1);
+      else idx.push(centre, base + j + 1, base + j);
+    }
+  };
+  if (capStart) cap(0, true);
+  if (capEnd) cap(n - 1, false);
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  tag(g, 0, arm);
+  g.attributes.aPart.array.set(parts);
+  return g;
+}
 
 // Shoulder pivot the vertex shader rotates the arms around. Shared with the
 // shader as a constant so the two never drift apart.
 const SHOULDER_X = 0.205;
 const SHOULDER_Y = 1.43;
 
+const R = (x, y, z, rx, rz, part, ao = 1) => ({ c: [x, y, z], rx, rz, part, ao });
+
+// Ring indices on the body tube: 11 jaw, 12 mouth and cheeks, 13 eyes, 14 brow.
+// Angles are measured so that 3pi/2 faces forward. At crowd distance a face is
+// three reads, two dark sockets, a nose and a mouth line, and without them a
+// punter is a mannequin however good the body is.
+const FRONT = Math.PI * 1.5;
+function faceShape(i, a) {
+  let d = a - FRONT;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  const ad = Math.abs(d);
+  let push = 1, ao = 1;
+  if (i === 13) {
+    // Eye sockets either side of the nose bridge.
+    const eye = Math.exp(-Math.pow((ad - 0.42) / 0.16, 2));
+    ao *= 1 - 0.55 * eye;
+    push *= 1 - 0.05 * eye;
+    if (ad < 0.14) push *= 1.05;              // bridge of the nose
+  }
+  if (i === 12) {
+    if (ad < 0.2) push *= 1.16;               // nose tip sits over the mouth ring
+    const cheek = Math.exp(-Math.pow((ad - 0.75) / 0.25, 2));
+    ao *= 1 - 0.18 * cheek;
+  }
+  if (i === 11) {
+    if (ad < 0.36) ao *= 0.62;                // mouth line
+    push *= 1 + 0.03 * Math.exp(-Math.pow(d / 0.3, 2)); // chin
+  }
+  if (i === 14 && ad < 0.7) push *= 1.03;     // brow ridge
+  return { push, ao };
+}
+
 function buildBodyGeometry() {
+  const S = PARTS.SKIN, T = PARTS.SHIRT, P = PARTS.TROUSER, H = PARTS.HAIR;
   const parts = [];
 
-  // Head: taller than wide, deeper at the back than the face, the way a skull
-  // is. The hair is a cap that hugs the crown, not a hat.
-  parts.push(piece(ball(0.102, 12, 10), 0, 1.635, 0, PARTS.SKIN, 0, 0.9, 1.13, 1.0));
-  const hair = new THREE.SphereGeometry(0.108, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.46);
-  parts.push(piece(hair, 0, 1.655, -0.012, PARTS.HAIR, 0, 0.93, 1.1, 1.04));
-  parts.push(piece(ball(0.024, 6, 5), 0, 1.622, 0.098, PARTS.SKIN));          // nose
-  parts.push(piece(new THREE.CylinderGeometry(0.052, 0.062, 0.12, 8, 1), 0, 1.505, 0, PARTS.SKIN));
+  // Hips to crown in one surface: pelvis, belt, waist, ribcage, chest, the
+  // shoulder line, the trapezius slope, the neck, the jaw and the skull.
+  parts.push(loft([
+    R(0, 0.79, 0.0, 0.130, 0.100, P, 0.55),
+    R(0, 0.86, 0.0, 0.160, 0.118, P, 0.8),
+    R(0, 0.95, 0.0, 0.152, 0.112, P, 0.9),
+    R(0, 1.00, 0.004, 0.140, 0.104, T, 0.85),
+    R(0, 1.10, 0.008, 0.148, 0.108, T),
+    R(0, 1.21, 0.012, 0.165, 0.118, T),
+    R(0, 1.31, 0.010, 0.178, 0.118, T),
+    R(0, 1.39, 0.004, 0.186, 0.108, T, 0.95),
+    R(0, 1.44, 0.000, 0.150, 0.092, T, 0.9),
+    R(0, 1.475, 0.004, 0.072, 0.066, S, 0.75),
+    R(0, 1.53, 0.010, 0.056, 0.058, S, 0.7),
+    R(0, 1.575, 0.022, 0.074, 0.084, S, 0.8),
+    R(0, 1.625, 0.012, 0.086, 0.098, S),
+    R(0, 1.675, 0.004, 0.090, 0.101, S),
+    R(0, 1.72, 0.000, 0.080, 0.092, S),
+    R(0, 1.755, -0.004, 0.052, 0.062, S),
+    R(0, 1.772, -0.006, 0.02, 0.024, S)
+  ], 16, 0, true, true, faceShape));
 
-  // Torso: a chest capsule over a narrower waist capsule gives the V taper a
-  // standing body has, and the shoulder balls round off the top line.
-  parts.push(piece(cap(0.17, 0.22, 9), 0, 1.25, 0, PARTS.SHIRT, 0, 1.18, 1.0, 0.72));
-  parts.push(piece(cap(0.14, 0.14, 9), 0, 1.0, 0, PARTS.SHIRT, 0, 1.12, 1.0, 0.74));
-  for (const s of [-1, 1]) parts.push(piece(ball(0.075, 8, 6), s * SHOULDER_X, SHOULDER_Y, 0, PARTS.SHIRT, s));
+  // Hair: a thin shell over the crown and back of the skull, pushed back from
+  // the brow so it frames a face instead of covering one.
+  parts.push(loft([
+    R(0, 1.655, -0.016, 0.094, 0.100, H, 0.8),
+    R(0, 1.70, -0.012, 0.090, 0.098, H),
+    R(0, 1.74, -0.010, 0.076, 0.084, H),
+    R(0, 1.768, -0.010, 0.050, 0.058, H),
+    R(0, 1.785, -0.010, 0.016, 0.018, H)
+  ], 12, 0, false, true));
 
-  // Hips and legs.
-  parts.push(piece(cap(0.13, 0.08, 9), 0, 0.86, 0, PARTS.TROUSER, 0, 1.2, 1.0, 0.8));
+  // Legs and shoes. Each leg starts inside the pelvis so the join is hidden.
   for (const s of [-1, 1]) {
-    parts.push(piece(cap(0.078, 0.34), s * 0.092, 0.6, 0, PARTS.TROUSER));
-    parts.push(piece(cap(0.062, 0.34), s * 0.094, 0.24, 0.005, PARTS.TROUSER));
-    parts.push(piece(cap(0.05, 0.14, 6), s * 0.094, 0.045, 0.045, PARTS.HAIR, 0, 1.15, 0.75, 1, Math.PI / 2));
+    const x = s * 0.086;
+    parts.push(loft([
+      R(x, 0.86, 0.0, 0.080, 0.086, P, 0.6),
+      R(x, 0.74, 0.004, 0.078, 0.084, P, 0.75),
+      R(x * 1.02, 0.60, 0.008, 0.066, 0.070, P),
+      R(x * 1.03, 0.50, 0.010, 0.056, 0.060, P),
+      R(x * 1.03, 0.40, 0.004, 0.060, 0.068, P),
+      R(x * 1.03, 0.26, 0.000, 0.050, 0.055, P),
+      R(x * 1.03, 0.11, 0.004, 0.040, 0.042, P, 0.8)
+    ], 8, 0, false, true));
+    parts.push(loft([
+      R(x * 1.03, 0.05, -0.055, 0.040, 0.034, H, 0.7),
+      R(x * 1.03, 0.055, 0.000, 0.048, 0.040, H),
+      R(x * 1.03, 0.045, 0.080, 0.044, 0.030, H),
+      R(x * 1.03, 0.035, 0.125, 0.026, 0.020, H, 0.8)
+    ], 8, 0, true, true));
   }
 
-  // Arms hang from the shoulder pivot; the shader swings them from there.
+  // Arms hang from the shoulder pivot; the shader swings them from there. A
+  // short sleeve covers the deltoid, then skin: biceps, elbow, forearm, hand.
   for (const s of [-1, 1]) {
-    parts.push(piece(cap(0.052, 0.24), s * SHOULDER_X, SHOULDER_Y - 0.17, 0, PARTS.SKIN, s));
-    parts.push(piece(cap(0.044, 0.22), s * SHOULDER_X, SHOULDER_Y - 0.46, 0.01, PARTS.SKIN, s));
-    parts.push(piece(ball(0.045, 7, 6), s * SHOULDER_X, SHOULDER_Y - 0.64, 0.015, PARTS.SKIN, s));
+    const X = s * SHOULDER_X, Y = SHOULDER_Y;
+    parts.push(loft([
+      R(X * 0.92, Y + 0.01, 0.0, 0.066, 0.064, T, 0.75),
+      R(X * 1.02, Y - 0.07, 0.0, 0.064, 0.062, T),
+      R(X * 1.04, Y - 0.12, 0.002, 0.056, 0.056, S, 0.85),
+      R(X * 1.06, Y - 0.22, 0.006, 0.050, 0.050, S),
+      R(X * 1.07, Y - 0.32, 0.010, 0.040, 0.042, S),
+      R(X * 1.07, Y - 0.40, 0.014, 0.043, 0.045, S),
+      R(X * 1.06, Y - 0.54, 0.018, 0.031, 0.035, S),
+      R(X * 1.06, Y - 0.60, 0.020, 0.036, 0.024, S),
+      R(X * 1.06, Y - 0.67, 0.022, 0.026, 0.018, S)
+    ], 7, s, false, true));
   }
 
   // A pint glass in the right hand, collapsed away when unused.
@@ -88,13 +225,8 @@ function buildBodyGeometry() {
   cup.translate(SHOULDER_X, SHOULDER_Y - 0.72, 0.03);
   parts.push(tag(cup, PARTS.DRINK, 1));
 
-  // Every piece must carry the same attribute set before a merge.
-  for (const g of parts) {
-    if (!g.index) g.setIndex([...Array(g.attributes.position.count).keys()]);
-  }
   const merged = mergeGeometries(parts, false);
   parts.forEach((p) => p.dispose());
-  merged.computeVertexNormals();
   return merged;
 }
 
@@ -153,7 +285,8 @@ const COLOR_HOOK = /* glsl */`
   else if (aPart > 2.5) cSkinTone = aSkin * 0.22;
   else if (aPart > 1.5) cSkinTone = aTrouser;
   else if (aPart > 0.5) cSkinTone = instanceColor.rgb;
-  vColor.rgb = cSkinTone;
+  // Baked occlusion rides in the colour attribute.
+  vColor.rgb = cSkinTone * color.rgb;
 `;
 
 export class Crowd {
@@ -169,8 +302,14 @@ export class Crowd {
     // white under the rim spots and competes with the fighters, which is the
     // opposite of what a crowd is for: it should read as silhouette and colour
     // mass, never as detail.
+    // A cloth weave in the normal map, so a shirt catching a rim light reads
+    // as fabric rather than as a smooth plastic shell.
+    const weave = TEX.fabric('#808080', 61, 256, 48).normal.clone();
+    weave.repeat.set(1.5, 2.5);
+    weave.needsUpdate = true;
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x6b6b72, roughness: 0.94, metalness: 0.0, vertexColors: true
+      color: 0x6b6b72, roughness: 0.94, metalness: 0.0, vertexColors: true,
+      normalMap: weave, normalScale: new THREE.Vector2(0.32, 0.32)
     });
     this.uniforms = {
       uBeat: { value: 0 }, uTime: { value: 0 }, uExcite: { value: 0 }, uSurge: { value: 0 }

@@ -14,7 +14,7 @@ export const CFG = {
     ssao: { radius: 0.55, intensity: 1.15, bias: 0.028 },
     dof: { focusDistance: 5.0, aperture: 0.0022, maxBlur: 0.007, focusRange: 1.6, nearRange: 2.6, farRange: 16.0 },
     motionBlur: { strength: 0.62, samples: 12 },
-    grain: 0.055,
+    grain: 0.026,
     vignette: 0.38,
     chromatic: 0.0021,
     grading: { lift: 0.008, gamma: 1.0, gain: 1.02, saturation: 0.94, temperature: 0.05 }
@@ -24,7 +24,8 @@ export const CFG = {
     fovSprint: 56,
     distance: 3.95,
     height: 1.58,
-    shoulder: 0.62,
+    shoulder: 0.34,
+    orbitOffset: 0.52,
     damping: 11.0,
     collisionRadius: 0.32
   },

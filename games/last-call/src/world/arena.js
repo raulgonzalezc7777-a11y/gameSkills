@@ -129,6 +129,9 @@ export class Arena {
       color: 0x8f8074, roughness: 0.6, metalness: 0.0, envMapIntensity: 1.35
     });
     applyPBR(floorMat, TEX.wood('#2c1b11', 17, 512, 8), 13);
+    // The wood normal map is authored for a close-up plank. Tiled thirteen
+    // times at full strength it turned the floor into hammered tin.
+    floorMat.normalScale.set(0.22, 0.22);
     const spill = spillMask(512, 77);
     spill.repeat.set(1.6, 1.6);
     floorMat.roughnessMap = spill;

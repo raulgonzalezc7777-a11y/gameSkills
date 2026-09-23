@@ -165,7 +165,7 @@ export class Lighting {
     group.add(G);
 
     // Ambient floor: just enough bounce that pure black never sits on screen.
-    const hemi = new THREE.HemisphereLight(0x3d2a55, 0x140d1c, 1.15);
+    const hemi = new THREE.HemisphereLight(0x46315e, 0x2a1426, 1.55);
     G.add(hemi);
     this.hemi = hemi;
 
