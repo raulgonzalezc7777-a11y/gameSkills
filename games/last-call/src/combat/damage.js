@@ -30,7 +30,7 @@ export function computeDamage(attacker, target, move, hurtMul, counter, ctx) {
   const dt = buzzTier(target.drunk);
   const exhausted = attacker.stamina < 20 ? TUNE.exhaustedDmg : 1;
   const matchMul = ctx?.director?.damageMul ?? 1;
-  return move.dmg * at.power * hurtMul * (counter ? TUNE.counterMul : 1) *
+  return move.dmg * (TUNE.damageScale ?? 1) * at.power * hurtMul * (counter ? TUNE.counterMul : 1) *
          attacker.chain.damageScale * exhausted * matchMul / dt.pain;
 }
 

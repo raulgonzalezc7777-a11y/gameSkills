@@ -24,13 +24,15 @@ export class Director {
 
     // Hype is shared: the crowd reacts to the fight, not to a player.
     this.hype = 0;
-    this.hypeDecay = 3.2;
+    // Hype has to be earned: in playtests it sat at the ceiling within ten
+    // seconds, which made the Borrachera a default rather than a reward.
+    this.hypeDecay = 4.6;
     this.lastCall = false;
     this.damageMul = 1;
 
     this._unsub = [
       bus.on(EV.HIT_LANDED, (p) => this.onHit(p)),
-      bus.on(EV.COMBO, (p) => this.addHype(3 + p.count * 2.2)),
+      bus.on(EV.COMBO, (p) => this.addHype(1.5 + p.count * 1.4)),
       bus.on(EV.KNOCKDOWN, (p) => this.onKnockdown(p)),
       bus.on(EV.PARRY, () => this.addHype(9)),
       bus.on(EV.STUMBLE, () => this.addHype(2)),
@@ -47,14 +49,14 @@ export class Director {
   onHit({ attacker, damage }) {
     // A drunk fighter landing a heavy shot is the crowd's favourite thing.
     const drunkBonus = 1 + (attacker.drunk01 ?? 0) * 1.6;
-    this.addHype(damage * 0.22 * drunkBonus);
+    this.addHype(damage * 0.12 * drunkBonus);
     bus.emit(EV.CROWD_REACT, { level: damage > 12 ? 'roar' : 'ooh' });
   }
 
   onKnockdown({ fighter }) {
     const i = this.fighters.indexOf(fighter);
     if (i >= 0) this.knockdowns[i]++;
-    this.addHype(18);
+    this.addHype(12);
     this.phase = PHASE.KNOCKDOWN;
     this.phaseTimer = 2.4;
     // Three knockdowns in a round ends it, the way a real referee would.
@@ -133,6 +135,9 @@ export class Director {
       }
 
       case PHASE.KNOCKDOWN:
+        // The round clock keeps running through a knockdown, as it does in a
+        // real bout; freezing it let a knockdown-heavy round last forever.
+        this.clock = Math.max(0, this.clock - dt);
         if (this.phaseTimer <= 0) this.phase = PHASE.FIGHT;
         break;
 

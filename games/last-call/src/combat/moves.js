@@ -166,10 +166,13 @@ export const TUNE = {
   graceHype: 16,
   graceSlowmo: { duration: 0.75, scale: 0.34 },
 
-  // Damage
-  partDamageMul: 1.45,      // per-limb pools drain faster than the health bar
-  knockdownPerDamage: 0.0075,
-  headKnockdownBias: 0.40,
+  // Damage. Tuned from a keyboard playtest, not from the table: at the old
+  // values the player lost three quarters of their health in eight seconds and
+  // the head pool emptied so fast that nearly every clean shot was a knockdown.
+  damageScale: 0.46,        // one global lever, so a round lasts about a minute
+  partDamageMul: 1.05,      // per-limb pools drain faster than the health bar
+  knockdownPerDamage: 0.0042,
+  headKnockdownBias: 0.14,
   hitstunPerDamage: 0.011,
   chipMul: 0.22,
 
