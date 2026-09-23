@@ -13,33 +13,33 @@ const W = +(process.argv[4] || 1600), H = +(process.argv[5] || 900);
 mkdirSync(OUT, { recursive: true });
 
 const BEATS = [
-  { id: '01-wide-stance', frames: 10, setup: null,
+  { id: '01-wide-stance', frames: 10, setup: `(()=>{window.__game.match.tpcam.override=null;})()`,
     note: 'Neutral stance at fighting distance. The establishing shot.' },
   { id: '02-closeup-face', frames: 6,
-    setup: `(()=>{const g=window.__game; g.match.tpcam.dist=1.5; g.match.tpcam.pitch=0.02;})()`,
+    setup: `(()=>{const g=window.__game; g.match.tpcam.override={dist:1.9,pitch:0.06,fov:38};})()`,
     note: 'Camera pushed in on the fighters: material and face detail.' },
   { id: '03-impact', frames: 3,
-    setup: `(()=>{const g=window.__game,m=g.match;g.match.tpcam.dist=3.2;
+    setup: `(()=>{const g=window.__game,m=g.match;g.match.tpcam.override={dist:3.0,pitch:0.05,fov:44};
       m.player.position.set(-0.6,0,0);m.cpu.position.set(0.55,0,0);
-      m.player.attack('hook');})()`,
+      m.player.attack('hook', m.cpu);})()`,
     note: 'The frame of contact: hit feedback, VFX, camera reaction.' },
   { id: '04-drunk-high', frames: 6,
     setup: `(()=>{const g=window.__game,m=g.match;m.player.drunk=100;m.cpu.drunk=88;
-      g.match.tpcam.dist=4.2;})()`,
+      g.match.tpcam.override={dist:4.0,pitch:0.08,fov:50};})()`,
     note: 'Maximum drunkenness: the signature post FX and the sway.' },
   { id: '05-knockdown', frames: 4,
     setup: `(()=>{const g=window.__game,m=g.match;m.cpu.takeHit(m.player,{dmg:34,push:5,reach:2,part:'head',stam:0},'head');})()`,
     note: 'Knockdown: ragdoll, slow motion, crowd reaction.' },
   { id: '06-venue-wide', frames: 6,
-    setup: `(()=>{const g=window.__game;g.match.tpcam.dist=9.5;g.match.tpcam.pitch=0.34;})()`,
+    setup: `(()=>{const g=window.__game;g.match.tpcam.override={dist:11.0,pitch:0.40,fov:56};})()`,
     note: 'The venue as a whole: architecture, lighting design, crowd, depth.' },
   { id: '07-floor-reflection', frames: 6,
-    setup: `(()=>{const g=window.__game;g.match.tpcam.dist=4.0;g.match.tpcam.pitch=-0.24;})()`,
+    setup: `(()=>{const g=window.__game;g.match.tpcam.override={dist:4.2,pitch:-0.26,fov:48};})()`,
     note: 'Low angle across the floor: reflections and contact shadows.' },
   { id: '08-ko-moment', frames: 4,
     setup: `(()=>{const g=window.__game,m=g.match;m.cpu.health=1;
       m.cpu.takeHit(m.player,{dmg:50,push:7,reach:2,part:'head',stam:0},'head');
-      g.match.tpcam.dist=3.4;})()`,
+      g.match.tpcam.override={dist:3.4,pitch:0.02,fov:42};})()`,
     note: 'The knockout: the money shot.' }
 ];
 

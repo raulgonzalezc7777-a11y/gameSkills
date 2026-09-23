@@ -22,6 +22,11 @@ export class TPCamera {
     this.pos = new THREE.Vector3(0, 2, 6);
     this.look = new THREE.Vector3(0, 1.4, 0);
     this._t = 0;
+    // Photo mode. The capture harness and any future replay camera need to
+    // pin framing values that update() otherwise recomputes every frame,
+    // which is exactly the trap that made an earlier shot list silently
+    // photograph the default framing while claiming to be a close-up.
+    this.override = null;
     bus.on(EV.CAMERA_SHAKE, (amt) => { this.shake = Math.min(1.4, this.shake + amt); });
     bus.on(EV.CAMERA_KICK, (v) => { this.kick.add(v); });
   }
@@ -50,6 +55,14 @@ export class TPCamera {
     this.dist = expDamp(this.dist, wantDist, 4.5, dt);
     const wantFov = CFG.camera.fov + clamp(sep * 1.2, 0, 10);
     this.fov = expDamp(this.fov, wantFov, 5.0, dt);
+
+    if (this.override) {
+      const o = this.override;
+      if (o.dist !== undefined) this.dist = o.dist;
+      if (o.pitch !== undefined) this.pitch = o.pitch;
+      if (o.yaw !== undefined) this.yaw = o.yaw;
+      if (o.fov !== undefined) this.fov = o.fov;
+    }
 
     const sinP = Math.sin(this.pitch), cosP = Math.cos(this.pitch);
     _c.set(

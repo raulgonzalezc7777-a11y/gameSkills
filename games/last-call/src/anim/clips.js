@@ -160,12 +160,12 @@ export const GUARD = {
   'shoulderL.y': -0.10, 'shoulderL.x': 0.0, 'shoulderL.z': 0.10,
   'shoulderR.y': 0.10, 'shoulderR.x': 0.0, 'shoulderR.z': -0.14,
   // Lead arm: elbow down and forward, glove by the cheek.
-  'upperArmL.z': 1.16, 'upperArmL.y': 0.42, 'upperArmL.x': -0.34,
-  'forearmL.z': -1.55, 'forearmL.y': -0.55, 'forearmL.x': 0.0,
+  'upperArmL.z': 1.75, 'upperArmL.y': 1.32, 'upperArmL.x': -0.56,
+  'forearmL.z': -2.52, 'forearmL.y': -0.30, 'forearmL.x': 0.0,
   'handL.z': -0.18, 'handL.y': 0.0, 'handL.x': 0.0,
   // Power arm: tighter, glove on the chin.
-  'upperArmR.z': -1.30, 'upperArmR.y': -0.30, 'upperArmR.x': -0.30,
-  'forearmR.z': 1.85, 'forearmR.y': 0.62, 'forearmR.x': 0.0,
+  'upperArmR.z': -1.75, 'upperArmR.y': -1.20, 'upperArmR.x': -0.62,
+  'forearmR.z': 2.66, 'forearmR.y': 0.30, 'forearmR.x': 0.0,
   'handR.z': 0.18, 'handR.y': 0.0, 'handR.x': 0.0,
   // Lead leg forward, power leg back, both knees loaded.
   'thighL.x': -0.30, 'thighL.y': 0.10, 'thighL.z': -0.06,
@@ -203,10 +203,12 @@ def('idleGuard', {
     'spine.x': [[0, 0.08], [0.9, 0.105], [1.8, 0.08], [2.6, 0.10], [3.2, 0.08]],
     'chest.y': [[0, 0.16], [1.1, 0.21], [2.2, 0.13], [3.2, 0.16]],
     'head.y': [[0, -0.26], [1.1, -0.30], [2.2, -0.23], [3.2, -0.26]],
-    'upperArmL.z': [[0, 1.16], [0.9, 1.10], [1.8, 1.16], [2.6, 1.11], [3.2, 1.16]],
-    'upperArmR.z': [[0, -1.30], [0.9, -1.25], [1.8, -1.30], [2.6, -1.26], [3.2, -1.30]],
-    'forearmL.z': [[0, -1.55], [1.1, -1.62], [2.2, -1.52], [3.2, -1.55]],
-    'forearmR.z': [[0, 1.85], [1.1, 1.79], [2.2, 1.88], [3.2, 1.85]],
+    'upperArmL.z': [[0, 1.75], [0.9, 1.70], [1.8, 1.75], [2.6, 1.71], [3.2, 1.75]],
+    'upperArmR.z': [[0, -1.75], [0.9, -1.70], [1.8, -1.75], [2.6, -1.71], [3.2, -1.75]],
+    'forearmL.z': [[0, -2.52], [1.1, -2.58], [2.2, -2.49], [3.2, -2.52]],
+    'forearmR.z': [[0, 2.66], [1.1, 2.60], [2.2, 2.69], [3.2, 2.66]],
+    'upperArmL.y': [[0, 1.32], [1.1, 1.27], [2.2, 1.35], [3.2, 1.32]],
+    'upperArmR.y': [[0, -1.20], [1.1, -1.25], [2.2, -1.16], [3.2, -1.20]],
     'thighL.x': [[0, -0.30], [1.6, -0.26], [3.2, -0.30]],
     'thighR.x': [[0, 0.20], [1.6, 0.16], [3.2, 0.20]]
   }

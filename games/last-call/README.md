@@ -48,3 +48,20 @@ node tools/compare.mjs a.png b.png out.png key.json   # blind A/B composite
 ```
 
 The bar every frame is scored against is [REVIEW/RUBRIC.md](REVIEW/RUBRIC.md).
+
+Diagnostic pages, each isolating one subsystem so a defect can be judged
+without the rest of the game in the way:
+
+| Page | What it isolates |
+|---|---|
+| `char-preview.html` | the fighters, on a neutral stage, with a head close-up |
+| `anim-preview.html` | every clip and blend, with a live state readout |
+| `combat-preview.html` | hitboxes, frame state, chains and buzz |
+| `guard-lab.html` | three candidate poses side by side, for dialling in angles |
+| `audio-preview.html` | oscilloscope, FFT and per-bus meters |
+| `vfx-preview.html` | every effect firing on a loop |
+
+Useful URL flags on the game itself: `?auto` skips the title, `?q=low|medium|high|cinematic`
+picks a quality preset, `?nopost` renders the lit scene straight to the screen,
+and `?off=ssao,ssr,dof,mb,bloom` disables individual post passes. Between them a
+bad frame can be bisected instead of guessed at.

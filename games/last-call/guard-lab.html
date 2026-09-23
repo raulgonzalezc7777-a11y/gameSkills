@@ -1,0 +1,35 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Guard lab</title>
+<style>body{margin:0;background:#0a0a0f;color:#cfd;font:12px monospace}canvas{display:block}#l{position:fixed;top:6px;left:8px;white-space:pre}</style></head>
+<body><canvas id="c"></canvas><div id="l"></div>
+<script type="module">
+import * as THREE from 'three';
+import { buildFighter } from './src/characters/builder.js';
+// A bare stage for dialling in arm angles. Three fighters, three candidate
+// guards, one frame: comparing variants side by side beats guessing at a
+// rotation convention one screenshot at a time.
+const c=document.getElementById('c');
+const r=new THREE.WebGLRenderer({canvas:c,antialias:true,preserveDrawingBuffer:true});
+r.setSize(innerWidth,innerHeight);r.outputColorSpace=THREE.SRGBColorSpace;
+r.toneMapping=THREE.ACESFilmicToneMapping;r.toneMappingExposure=1.1;
+const s=new THREE.Scene();s.background=new THREE.Color(0x12141c);
+const cam=new THREE.PerspectiveCamera(34,innerWidth/innerHeight,0.1,60);
+cam.position.set(0,1.45,4.6);cam.lookAt(0,1.15,0);
+s.add(new THREE.HemisphereLight(0xbfd4ff,0x20202a,1.3));
+const k=new THREE.DirectionalLight(0xffffff,2.2);k.position.set(2,4,3);s.add(k);
+const f=new THREE.DirectionalLight(0x88aaff,0.9);f.position.set(-3,2,-2);s.add(f);
+const g=new THREE.Mesh(new THREE.CircleGeometry(6,48),new THREE.MeshStandardMaterial({color:0x1b1f2b,roughness:0.9}));
+g.rotation.x=-Math.PI/2;s.add(g);
+const rigs=[];
+for(let i=0;i<3;i++){const rig=buildFighter({name:'LAB'+i});rig.group.position.set(-1.25+i*1.25,0,0);s.add(rig.group);rigs.push(rig);}
+window.__rigs=rigs;
+window.__setGuard=(i,v)=>{const b=rigs[i].bones;
+  b.upperArmL.rotation.set(v.ulx,v.uly,v.ulz);
+  b.forearmL.rotation.set(v.flx,v.fly,v.flz);
+  b.upperArmR.rotation.set(v.urx,v.ury,v.urz);
+  b.forearmR.rotation.set(v.frx,v.fry,v.frz);
+  rigs[i].group.updateMatrixWorld(true);};
+window.__label=(t)=>{document.getElementById('l').textContent=t;};
+function loop(){r.render(s,cam);window.__frameCount=(window.__frameCount||0)+1;requestAnimationFrame(loop);}
+loop();
+window.__game={scene:s,camera:cam,renderer:r,THREE};
+</script></body></html>
