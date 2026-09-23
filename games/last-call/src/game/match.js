@@ -10,22 +10,19 @@ import { input } from '../core/input.js';
 import { time } from '../core/time.js';
 import { bus, EV } from '../core/events.js';
 import { clamp01, expDamp } from '../core/math.js';
+import { ROSTER as CARD } from '../characters/roster.js';
 import { Director, PHASE } from './director.js';
 
-export const ROSTER = [
-  { name: 'DIEGO "EL TANQUE"', skin: '#b87c52', shirt: '#c0392b', pants: '#1c2233', bulk: 1.22 },
-  { name: 'KAI KOMATSU',       skin: '#e0b28a', shirt: '#1f6f8b', pants: '#14181f', bulk: 1.02 },
-  { name: 'BRONWYN HALE',      skin: '#f0c9a6', shirt: '#7d3cff', pants: '#22182e', bulk: 0.94 },
-  { name: 'MALIK OSEI',        skin: '#7a4c33', shirt: '#f2c14e', pants: '#1a1d27', bulk: 1.12 }
-];
+// The card lives with the characters, because a spec is character data.
+export { ROSTER } from '../characters/roster.js';
 
 export class Match {
-  constructor(ctx) {
+  constructor(ctx, spec0 = 0, spec1 = 1) {
     this.scene = ctx.scene;
     this.arena = new Arena(ctx);
     this.scene.add(this.arena.group);
 
-    const [a, b] = [ROSTER[0], ROSTER[1]];
+    const [a, b] = [CARD[spec0 ?? 0], CARD[spec1 ?? 1]];
     this.player = new Fighter({ ...a, isPlayer: true, facing: 0 }, { arena: this.arena });
     this.cpu = new Fighter({ ...b, facing: Math.PI }, { arena: this.arena });
     this.player.position.copy(this.arena.spawnPoints[0]);

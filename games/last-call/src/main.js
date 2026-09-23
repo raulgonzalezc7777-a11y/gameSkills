@@ -5,6 +5,7 @@ import { PostFX } from './render/postfx.js';
 import { Match } from './game/match.js';
 import { HUD } from './ui/hud.js';
 import { VFX, installVFXListeners } from './vfx/index.js';
+import { AudioEngine, installAudioListeners } from './audio/index.js';
 import { input } from './core/input.js';
 import { time } from './core/time.js';
 import { CFG, QUALITY_PRESETS } from './core/config.js';
@@ -53,6 +54,12 @@ vfx.trackFighter(match.cpu);
 // Soft particles need the scene depth, which only the post stack owns.
 vfx.setDepthTexture(post.sceneRT.depthTexture, camera.near, camera.far);
 
+// Everything is synthesized, so there is nothing to preload. The context
+// still cannot start before a gesture, which init() handles on its own.
+const audio = new AudioEngine();
+installAudioListeners(audio);
+audio.setListener(camera);
+
 function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
@@ -73,6 +80,9 @@ function start(fromGesture) {
   // anywhere else throws, which would pollute every automated capture log with
   // an error that is not a bug.
   if (fromGesture) input.requestLock(canvas);
+  // Audio only exists once a real gesture has happened. An automated capture
+  // run stays silent, which is exactly what it wants.
+  if (fromGesture) audio.init().then(() => audio.music.start()).catch(() => {});
 }
 document.getElementById('title').addEventListener('click', () => start(true));
 window.addEventListener('keydown', (e) => { if (e.code === 'Enter') start(true); });
@@ -112,6 +122,9 @@ function frame(nowMs) {
   // Effects are presentation, not simulation, so they take the wall time that
   // was actually consumed and never run more than once per displayed frame.
   vfx.update(Math.min(dt, MAX_STEPS * FIXED_DT), camera.position);
+  audio.update(time.rawDt);
+  audio.setDrunk(match.player.drunk01);
+  audio.setHype(match.director.hype / 100);
   post.params.drunk = match.player.drunk01 * 0.85;
   post.params.focusDistance = match.focusDistance;
   renderer.info.reset();
@@ -134,4 +147,4 @@ function frame(nowMs) {
 requestAnimationFrame(frame);
 
 // Expose for the automated visual review harness and for debugging.
-window.__game = { scene, camera, renderer, match, post, hud, vfx, time, CFG, THREE };
+window.__game = { scene, camera, renderer, match, post, hud, vfx, audio, time, CFG, THREE };

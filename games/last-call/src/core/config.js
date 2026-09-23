@@ -20,9 +20,9 @@ export const CFG = {
     grading: { lift: 0.012, gamma: 0.98, gain: 1.04, saturation: 1.12, temperature: 0.06 }
   },
   camera: {
-    fov: 48,
+    fov: 46,
     fovSprint: 56,
-    distance: 4.5,
+    distance: 3.95,
     height: 1.58,
     shoulder: 0.62,
     damping: 11.0,

@@ -46,7 +46,7 @@ export class TPCamera {
     this.pitch = clamp(this.pitch + lookInput.y * dt * 1.6, -0.35, 0.5);
 
     // Pull back as the fighters separate so both always read.
-    const wantDist = clamp(CFG.camera.distance + sep * 0.52, 3.9, 9.0);
+    const wantDist = clamp(CFG.camera.distance + sep * 0.44, 3.3, 7.6);
     this.dist = expDamp(this.dist, wantDist, 4.5, dt);
     const wantFov = CFG.camera.fov + clamp(sep * 1.2, 0, 10);
     this.fov = expDamp(this.fov, wantFov, 5.0, dt);
