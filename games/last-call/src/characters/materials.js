@@ -13,12 +13,17 @@ import { TEX } from '../render/texlib.js';
 
 // Skin UV atlas. Every skin vertex lands in one of these rects, which is what
 // lets damage.js paint a cut on a cheekbone without touching a calf.
+// The head takes the full width of the upper half because u runs all the way
+// around a ring: the face is only a third of that circumference, so anything
+// narrower leaves an eye a dozen pixels wide.
 export const SKIN_ATLAS = {
-  body: [0.015, 0.015, 0.485, 0.985],   // torso and head, one continuous loft
-  armL: [0.515, 0.760, 0.985, 0.985],
-  armR: [0.515, 0.515, 0.985, 0.740],
-  legL: [0.515, 0.260, 0.985, 0.485],
-  legR: [0.515, 0.015, 0.985, 0.240]
+  head: [0.010, 0.515, 0.990, 0.990],
+  body: [0.010, 0.010, 0.300, 0.500],
+  armL: [0.320, 0.265, 0.545, 0.500],
+  armR: [0.320, 0.010, 0.545, 0.245],
+  legL: [0.565, 0.265, 0.790, 0.500],
+  legR: [0.565, 0.010, 0.790, 0.245],
+  spare: [0.810, 0.010, 0.990, 0.500]
 };
 
 // Declared once and shared by every skin material, so the program cache sees a
@@ -98,8 +103,8 @@ export function makeSkinMaterial(skinTexture, bundle, opts = {}) {
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uSweat = { value: 0 };
     shader.uniforms.uSSSColor = { value: new THREE.Color(opts.sss ?? '#b8442a') };
-    shader.uniforms.uSSSIntensity = { value: opts.sssIntensity ?? 0.55 };
-    shader.uniforms.uSSSPower = { value: opts.sssPower ?? 2.6 };
+    shader.uniforms.uSSSIntensity = { value: opts.sssIntensity ?? 0.30 };
+    shader.uniforms.uSSSPower = { value: opts.sssPower ?? 3.2 };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying float vWetZone;')
       .replace('#include <begin_vertex>', SKIN_ZONE);
@@ -156,14 +161,17 @@ export function makeHairMaterial(color, seed) {
   const mat = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(color),
     normalMap: cloneTex(bundle.normal, 3),
-    roughness: 0.42,
+    roughness: 0.52,
     metalness: 0.0,
-    sheen: 0.9,
-    sheenRoughness: 0.35,
+    sheen: 0.8,
+    sheenRoughness: 0.40,
     sheenColor: new THREE.Color('#6b5544'),
-    envMapIntensity: 0.9
+    envMapIntensity: 0.9,
+    // Double sided so the open hairline edge shows hair from below rather than
+    // a hole straight through to the scalp.
+    side: THREE.DoubleSide
   });
-  mat.normalScale.set(1.6, 1.6);
+  mat.normalScale.set(0.75, 0.75);
   mat.name = 'hair';
   return mat;
 }

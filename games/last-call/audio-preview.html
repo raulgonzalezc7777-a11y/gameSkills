@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>LAST CALL - Sound Lab</title>
+<style>
+  :root {
+    --bg: #07080d; --panel: #101219; --line: #1d2130; --ink: #e8ecf5;
+    --dim: #79839c; --hot: #ff2e6a; --cool: #35e0ff; --warm: #ffc447; --go: #49f2a4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 13px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    padding: 14px 18px 40px;
+  }
+  h1 { font-size: 17px; letter-spacing: .22em; margin: 0 0 2px; text-transform: uppercase; }
+  h1 span { color: var(--hot); }
+  h2 { font-size: 11px; letter-spacing: .2em; color: var(--dim); text-transform: uppercase;
+       margin: 18px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 5px; }
+  .sub { color: var(--dim); margin: 0 0 12px; font-size: 11.5px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button {
+    background: #171b27; color: var(--ink); border: 1px solid #2a3040; border-radius: 4px;
+    padding: 6px 10px; font: inherit; cursor: pointer; letter-spacing: .05em;
+  }
+  button:hover { border-color: var(--cool); color: var(--cool); }
+  button.hot { border-color: var(--hot); color: var(--hot); }
+  button.on { background: #22301f; border-color: var(--go); color: var(--go); }
+  label.sl { display: flex; align-items: center; gap: 7px; color: var(--dim); font-size: 11.5px; }
+  input[type=range] { width: 130px; accent-color: var(--hot); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 8px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 7px 8px 6px; }
+  .card .nm { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .card .nm b { font-weight: 600; letter-spacing: .06em; font-size: 12px; }
+  .card .nm i { font-style: normal; color: var(--dim); font-size: 10px; }
+  .card canvas { display: block; width: 100%; height: 46px; background: #0a0c12; border-radius: 3px; }
+  .card canvas.spec { height: 24px; margin-top: 3px; }
+  .card button { width: 100%; margin-top: 5px; padding: 3px 0; font-size: 11px; }
+  .scopes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .scopes canvas, #musicwave, #musicoffline { width: 100%; height: 150px; background: #0a0c12;
+     border: 1px solid var(--line); border-radius: 5px; display: block; }
+  #musicoffline { height: 96px; }
+  #musicwave { height: 72px; }
+  .meters { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .meter { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; }
+  .meter .lb { color: var(--dim); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; }
+  .meter .bar { height: 9px; background: #0a0c12; border-radius: 2px; margin-top: 5px; overflow: hidden; }
+  .meter .fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--go), var(--warm) 72%, var(--hot)); }
+  .meter .pk { font-size: 10px; color: var(--dim); margin-top: 3px; }
+  #status { color: var(--warm); font-size: 11.5px; }
+</style>
+</head>
+<body>
+<h1><span>LAST CALL</span> &nbsp;SOUND LAB</h1>
+<p class="sub">Every sound below is synthesized at runtime. Nothing is loaded from disk.
+The cards render each sound through an OfflineAudioContext and draw the real waveform and spectrum.</p>
+
+<div class="panel row">
+  <button id="live" class="hot">ENABLE LIVE AUDIO</button>
+  <button id="mstart">MUSIC PLAY</button>
+  <button id="mstop">MUSIC STOP</button>
+  <button id="mlc">LAST CALL</button>
+  <label class="sl">DRUNK <input id="drunk" type="range" min="0" max="100" value="0"><b id="drunkv">0.00</b></label>
+  <label class="sl">HYPE <input id="hype" type="range" min="0" max="100" value="35"><b id="hypev">0.35</b></label>
+  <label class="sl">INTENSITY <input id="inten" type="range" min="0" max="100" value="72"><b id="intenv">0.72</b></label>
+  <button id="demo">RUN FIGHT DEMO</button>
+  <span id="status">offline render only, live audio idle</span>
+</div>
+
+<h2>Bus levels</h2>
+<div class="meters" id="meters"></div>
+
+<h2>Master oscilloscope and spectrum</h2>
+<div class="scopes">
+  <canvas id="scope" width="900" height="300"></canvas>
+  <canvas id="fft" width="900" height="300"></canvas>
+</div>
+
+<h2>Music, offline render of 8 s at 126 BPM (beat markers in pink)</h2>
+<canvas id="musicoffline" width="1800" height="192"></canvas>
+
+<h2>Music, live scrolling waveform (beat callbacks in pink)</h2>
+<canvas id="musicwave" width="1200" height="128"></canvas>
+
+<h2>Sound library</h2>
+<div class="grid" id="lib"></div>
+
+<script type="module">
+import { AudioEngine, Mixer, SfxKit, CrowdBed, MusicEngine, SFX_NAMES } from './src/audio/index.js';
+
+const $ = (id) => document.getElementById(id);
+const status = $('status');
+
+// --- offline previews -------------------------------------------------------
+// Rendering each sound through an OfflineAudioContext needs no user gesture, so
+// the lab shows real waveforms the moment the page opens, including in a
+// headless screenshot run where nothing can ever be clicked.
+const SR = 44100;
+const EXTRA = { bodyfall: 1.2, bell: 2.6, crowdshout: 1.6, gulp: 1.2, parry: 1.2 };
+
+async function renderOffline(name, secs) {
+  const ctx = new OfflineAudioContext(2, Math.floor(SR * secs), SR);
+  const mixer = new Mixer(ctx);
+  const kit = new SfxKit(mixer);
+  kit.play(name, { when: 0.01 });
+  const buf = await ctx.startRendering();
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  const mono = new Float32Array(L.length);
+  for (let i = 0; i < L.length; i++) mono[i] = (L[i] + R[i]) * 0.5;
+  return mono;
+}
+
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k], ui = im[i + k];
+        const vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci;
+        const vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi;
+        re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
+        const nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+      }
+    }
+  }
+}
+
+function spectrumOf(sig) {
+  const N = 4096;
+  const re = new Float32Array(N), im = new Float32Array(N);
+  const n = Math.min(N, sig.length);
+  for (let i = 0; i < n; i++) re[i] = sig[i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1)));
+  fft(re, im);
+  const out = new Float32Array(N / 2);
+  let mx = 1e-9;
+  for (let k = 0; k < N / 2; k++) { out[k] = Math.hypot(re[k], im[k]); if (out[k] > mx) mx = out[k]; }
+  for (let k = 0; k < N / 2; k++) out[k] /= mx;
+  return out;
+}
+
+function drawWave(cv, sig, colour) {
+  const g = cv.getContext('2d');
+  const w = cv.width = cv.clientWidth * 2, h = cv.height = 92;
+  g.clearRect(0, 0, w, h);
+  g.strokeStyle = '#1b2030'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+  let peak = 1e-6;
+  for (let i = 0; i < sig.length; i++) { const a = Math.abs(sig[i]); if (a > peak) peak = a; }
+  const sc = (h / 2 - 2) / peak;
+  g.fillStyle = colour;
+  const step = sig.length / w;
+  for (let x = 0; x < w; x++) {
+    let lo = 0, hi = 0;
+    for (let i = Math.floor(x * step); i < Math.floor((x + 1) * step); i++) {
+      if (sig[i] < lo) lo = sig[i];
+      if (sig[i] > hi) hi = sig[i];
+    }
+    g.fillRect(x, h / 2 - hi * sc, 1, Math.max(1, (hi - lo) * sc));
+  }
+  return peak;
+}
+
+function drawSpec(cv, spec) {
+  const g = cv.getContext('2d');
+  const w = cv.width = cv.clientWidth * 2, h = cv.height = 48;
+  g.clearRect(0, 0, w, h);
+  // Log frequency axis: 40 Hz to 20 kHz, because that is how the ear reads it.
+  const f0 = 40, f1 = 20000, bins = spec.length;
+  for (let x = 0; x < w; x++) {
+    const f = f0 * Math.pow(f1 / f0, x / w);
+    const k = Math.min(bins - 1, Math.round(f / (SR / 2) * bins));
+    const v = Math.pow(spec[k], 0.42);
+    const hue = 190 - v * 180;
+    g.fillStyle = 'hsl(' + hue + ',95%,' + (12 + v * 52) + '%)';
+    g.fillRect(x, h - v * h, 1, v * h);
+  }
+}
+
+// Centroid, so each card can say in one number why it sounds the way it does.
+function centroidOf(spec) {
+  let cs = 0, es = 0;
+  for (let k = 1; k < spec.length; k++) {
+    const m = spec[k] * spec[k];
+    cs += (k * (SR / 2) / spec.length) * m; es += m;
+  }
+  return es > 0 ? cs / es : 0;
+}
+
+const lib = $('lib');
+const cards = [];
+for (const name of SFX_NAMES) {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML = '<div class="nm"><b>' + name + '</b><i data-i></i></div>' +
+    '<canvas data-w></canvas><canvas class="spec" data-s></canvas>' +
+    '<button data-p>PLAY</button>';
+  lib.appendChild(el);
+  el.querySelector('[data-p]').addEventListener('click', () => {
+    if (!engine.ready) return void status.replaceChildren('click ENABLE LIVE AUDIO first');
+    engine.play(name, { volume: 1 });
+  });
+  cards.push({ name, el });
+}
+
+(async () => {
+  for (const c of cards) {
+    const secs = EXTRA[c.name] || 0.9;
+    const sig = await renderOffline(c.name, secs);
+    const peak = drawWave(c.el.querySelector('[data-w]'), sig, '#35e0ff');
+    const spec = spectrumOf(sig);
+    drawSpec(c.el.querySelector('[data-s]'), spec);
+    c.el.querySelector('[data-i]').textContent =
+      'pk ' + peak.toFixed(2) + '  ' + Math.round(centroidOf(spec)) + 'Hz';
+  }
+  // A whole bar of the track, drawn offline so the scrolling view below has
+  // something to show before live audio is ever enabled.
+  const ctx = new OfflineAudioContext(2, SR * 8, SR);
+  const mixer = new Mixer(ctx);
+  const kit = new SfxKit(mixer);
+  const m = new MusicEngine(mixer, { offline: true });
+  const bed = new CrowdBed(mixer, kit);
+  bed.start(0); bed.hype = 0.6; bed.setHype(0.6); bed.schedule(0, 8);
+  m.setIntensity(0.85); m.start(0.02); m.scheduleUntil(8.1);
+  const buf = await ctx.startRendering();
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  const mono = new Float32Array(L.length);
+  for (let i = 0; i < L.length; i++) mono[i] = (L[i] + R[i]) * 0.5;
+  drawMusicOffline(mono);
+  status.textContent = 'offline previews rendered, live audio idle';
+  window.__labReady = true;
+})();
+
+function drawMusicOffline(sig) {
+  const cv = $('musicoffline');
+  const g = cv.getContext('2d');
+  const w = cv.width = cv.clientWidth * 2, h = cv.height = 192;
+  g.fillStyle = '#0a0c12'; g.fillRect(0, 0, w, h);
+  const beat = 60 / 126, secs = sig.length / SR;
+  g.strokeStyle = 'rgba(255,46,106,.55)';
+  for (let b = 0; b * beat < secs; b++) {
+    const x = (b * beat + 0.02) / secs * w;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+  }
+  let peak = 1e-6;
+  for (let i = 0; i < sig.length; i++) { const a = Math.abs(sig[i]); if (a > peak) peak = a; }
+  const sc = (h / 2 - 4) / peak;
+  g.fillStyle = '#49f2a4';
+  const step = sig.length / w;
+  for (let x = 0; x < w; x++) {
+    let lo = 0, hi = 0;
+    for (let i = Math.floor(x * step); i < Math.floor((x + 1) * step); i++) {
+      if (sig[i] < lo) lo = sig[i];
+      if (sig[i] > hi) hi = sig[i];
+    }
+    g.fillRect(x, h / 2 - hi * sc, 1, Math.max(1, (hi - lo) * sc));
+  }
+  g.fillStyle = '#79839c'; g.font = '20px ui-monospace, monospace';
+  g.fillText('offline render, 8 s, 126 BPM, peak ' + peak.toFixed(3), 12, 26);
+}
+
+// --- live rig ---------------------------------------------------------------
+const engine = new AudioEngine();
+window.__audio = engine;
+const BUSES = ['master', 'music', 'sfx', 'crowd', 'voice'];
+const meterEls = {};
+for (const b of BUSES) {
+  const d = document.createElement('div');
+  d.className = 'meter';
+  d.innerHTML = '<div class="lb">' + b + '</div><div class="bar"><div class="fill"></div></div><div class="pk">-</div>';
+  $('meters').appendChild(d);
+  meterEls[b] = { fill: d.querySelector('.fill'), pk: d.querySelector('.pk'), peak: 0 };
+}
+
+async function enable() {
+  await engine.init();
+  if (!engine.ready) { status.textContent = 'Web Audio unavailable'; return; }
+  engine.setDrunk(+$('drunk').value / 100);
+  engine.setHype(+$('hype').value / 100);
+  engine.music.setIntensity(+$('inten').value / 100);
+  engine.onBeat(() => { beatFlash = 1; });
+  $('live').classList.add('on');
+  $('live').textContent = 'LIVE AUDIO ON';
+  status.textContent = 'live, ctx ' + engine.ctx.state + ' @ ' + engine.ctx.sampleRate + ' Hz';
+  startLive();
+}
+$('live').addEventListener('click', enable);
+$('mstart').addEventListener('click', () => { engine.music.start(); });
+$('mstop').addEventListener('click', () => { engine.music.stop(); });
+$('mlc').addEventListener('click', (e) => {
+  const on = !e.target.classList.contains('on');
+  e.target.classList.toggle('on', on);
+  engine.music.lastCall(on);
+});
+for (const [id, fn] of [['drunk', (v) => engine.setDrunk(v)], ['hype', (v) => engine.setHype(v)],
+                        ['inten', (v) => engine.music.setIntensity(v)]]) {
+  $(id).addEventListener('input', (e) => {
+    const v = +e.target.value / 100;
+    $(id + 'v').textContent = v.toFixed(2);
+    if (engine.ready) fn(v);
+  });
+}
+
+// A scripted round, so the lab can be judged on how the system behaves under
+// a real fight rather than on isolated one-shots.
+$('demo').addEventListener('click', async () => {
+  if (!engine.ready) await enable();
+  const seq = [
+    [0, () => { engine.music.start(); engine.surgeCrowd('roar', 1); engine.play('bell'); }],
+    [900, () => engine.play('jab', { damage: 6, position: { x: -1, y: 1.6, z: 0 } })],
+    [1080, () => engine.play('jab', { damage: 6, position: { x: -1, y: 1.6, z: 0 } })],
+    [1320, () => { engine.play('cross', { damage: 11 }); engine.play('grunt', { damage: 11 }); }],
+    [1700, () => { engine.play('whiff'); }],
+    [2000, () => { engine.play('block', { damage: 4 }); }],
+    [2300, () => { engine.play('parry'); engine.surgeCrowd('roar', 1.2); }],
+    [2700, () => { engine.play('uppercut', { damage: 22 }); engine.play('headhit', { damage: 22 }); engine.surgeCrowd('big', 1.3); }],
+    [3100, () => { engine.play('bodyfall'); engine.surgeCrowd('peak', 1.4); engine.duck(0.7, 1.6, 0.5); }],
+    [4200, () => { engine.play('glassbreak', { position: { x: 3, y: 1, z: 2 } }); }],
+    [4600, () => { engine.music.lastCall(true); engine.setHype(1); engine.surgeCrowd('lastCall', 1.5); }],
+    [8000, () => { engine.music.lastCall(false); engine.setHype(+$('hype').value / 100); }]
+  ];
+  for (const [t, fn] of seq) setTimeout(fn, t);
+});
+
+let beatFlash = 0;
+let running = false;
+const hist = new Float32Array(420);
+let histHead = 0;
+const beatMarks = [];
+
+function startLive() {
+  if (running) return;
+  running = true;
+  requestAnimationFrame(loop);
+}
+
+function loop() {
+  requestAnimationFrame(loop);
+  if (!engine.ready) return;
+  const mx = engine.mixer;
+  const an = mx.masterAnalyser;
+  const n = an.fftSize;
+  if (!loop.td || loop.td.length !== n) { loop.td = new Uint8Array(n); loop.fd = new Uint8Array(an.frequencyBinCount); }
+  an.getByteTimeDomainData(loop.td);
+  an.getByteFrequencyData(loop.fd);
+
+  // Oscilloscope
+  const sc = $('scope'), g = sc.getContext('2d');
+  const w = sc.width, h = sc.height;
+  g.fillStyle = '#0a0c12'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#1b2030'; g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+  g.strokeStyle = '#35e0ff'; g.lineWidth = 2; g.beginPath();
+  for (let i = 0; i < n; i++) {
+    const y = h / 2 - (loop.td[i] - 128) / 128 * (h / 2 - 4);
+    if (i === 0) g.moveTo(0, y); else g.lineTo(i / n * w, y);
+  }
+  g.stroke();
+
+  // Spectrum
+  const fc = $('fft'), f = fc.getContext('2d');
+  f.fillStyle = '#0a0c12'; f.fillRect(0, 0, fc.width, fc.height);
+  const bins = loop.fd.length, sr = engine.ctx.sampleRate;
+  for (let x = 0; x < fc.width; x++) {
+    const fr = 40 * Math.pow(20000 / 40, x / fc.width);
+    const k = Math.min(bins - 1, Math.round(fr / (sr / 2) * bins));
+    const v = loop.fd[k] / 255;
+    f.fillStyle = 'hsl(' + (190 - v * 180) + ',95%,' + (12 + v * 52) + '%)';
+    f.fillRect(x, fc.height - v * fc.height, 1, v * fc.height);
+  }
+
+  // Meters
+  for (const b of BUSES) {
+    const v = mx.meter(b);
+    const m = meterEls[b];
+    m.peak = Math.max(v, m.peak * 0.94);
+    m.fill.style.width = Math.min(100, v * 100) + '%';
+    m.pk.textContent = 'peak ' + m.peak.toFixed(3);
+  }
+
+  // Scrolling music waveform, one column per frame.
+  let pk = 0;
+  for (let i = 0; i < n; i += 4) { const a = Math.abs(loop.td[i] - 128) / 128; if (a > pk) pk = a; }
+  hist[histHead] = pk;
+  if (beatFlash > 0.5) { beatMarks.push(histHead); beatFlash = 0; }
+  histHead = (histHead + 1) % hist.length;
+  const mc = $('musicwave'), mg = mc.getContext('2d');
+  mg.fillStyle = '#0a0c12'; mg.fillRect(0, 0, mc.width, mc.height);
+  const H = mc.height;
+  mg.fillStyle = 'rgba(255,46,106,.5)';
+  for (const b of beatMarks) {
+    const x = ((b - histHead + hist.length) % hist.length) / hist.length * mc.width;
+    mg.fillRect(x, 0, 3, H);
+  }
+  while (beatMarks.length > 64) beatMarks.shift();
+  mg.fillStyle = '#49f2a4';
+  const cw = mc.width / hist.length;
+  for (let i = 0; i < hist.length; i++) {
+    const idx = (histHead + i) % hist.length;
+    const x = i * cw;
+    const a = hist[idx] * (H / 2 - 4);
+    mg.fillRect(x, H / 2 - a, Math.max(1, cw), Math.max(1, a * 2));
+  }
+  mg.strokeStyle = '#1b2030';
+  mg.beginPath(); mg.moveTo(0, H / 2); mg.lineTo(mc.width, H / 2); mg.stroke();
+}
+
+// The screenshot harness cannot click, so it boots the lab from the URL.
+if (new URLSearchParams(location.search).has('auto')) {
+  enable().then(() => {
+    engine.music.start();
+    engine.setHype(0.7);
+    $('demo').click();
+    setInterval(() => $('demo').click(), 10000);
+  }).catch((e) => { status.textContent = 'autostart failed: ' + e.message; });
+}
+</script>
+</body>
+</html>

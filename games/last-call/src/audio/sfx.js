@@ -33,10 +33,14 @@ const FORMANT_GAIN = [1, 0.52, 0.26];
 // Attack-decay on a gain param. Exponential, because loudness is.
 function adsr(param, t, peak, a, d, hold = 0) {
   const p = Math.max(MIN * 2, peak);
-  param.setValueAtTime(MIN, t);
+  // The floor is relative to this layer's own peak, not an absolute epsilon.
+  // A quiet layer ramping to a fixed 1e-4 would finish decaying in a fraction
+  // of its stated time, which silently truncates every resonant tail.
+  const floor = Math.max(MIN, p * 0.0008);
+  param.setValueAtTime(floor, t);
   param.exponentialRampToValueAtTime(p, t + Math.max(0.0005, a));
   if (hold > 0) param.setValueAtTime(p, t + a + hold);
-  param.exponentialRampToValueAtTime(MIN, t + a + hold + Math.max(0.005, d));
+  param.exponentialRampToValueAtTime(floor, t + a + hold + Math.max(0.005, d));
   param.setValueAtTime(0, t + a + hold + d + 0.002);
   return a + hold + d + 0.002;
 }
@@ -211,7 +215,8 @@ export class SfxKit {
     if (this._live.length > this._voiceCap) return 0;
     const def = SOUNDS[ALIAS[name] || name];
     if (!def) return 0;
-    const t = Math.max(now + 0.001, opts.when || 0);
+    // opts.when is an absolute context time, opts.delay a relative offset.
+    const t = opts.when ? Math.max(now + 0.001, opts.when) : now + 0.002 + (opts.delay || 0);
     const head = this._head(def.bus || 'sfx', t, opts, def.gain ?? 1);
     let dur = 0;
     try {
@@ -235,12 +240,12 @@ function pitchOf(K, o) {
 // sub with a dull low slap. That spread is what the spectral centroid test in
 // tools/audio-check.mjs asserts on.
 const IMPACTS = {
-  jab:      { dmg: 6,  click: [5200, 0.34, 0.008], slap: [3200, 1.1, 0.30, 0.035], thump: [240, 105, 0.055, 0.42], sub: [70, 42, 0.10, 0.10] },
-  cross:    { dmg: 11, click: [4200, 0.30, 0.009], slap: [2400, 1.0, 0.32, 0.050], thump: [205, 78, 0.085, 0.55], sub: [65, 36, 0.15, 0.22] },
-  hook:     { dmg: 14, click: [3400, 0.26, 0.010], slap: [1800, 0.9, 0.36, 0.075], thump: [180, 62, 0.115, 0.62], sub: [60, 33, 0.19, 0.32] },
-  uppercut: { dmg: 18, click: [2200, 0.16, 0.012], slap: [950, 0.8, 0.30, 0.100], thump: [150, 40, 0.190, 0.72], sub: [56, 28, 0.30, 0.50] },
-  kick:     { dmg: 15, click: [2600, 0.20, 0.010], slap: [620, 0.7, 0.34, 0.090], thump: [165, 48, 0.140, 0.66], sub: [58, 30, 0.22, 0.40] },
-  block:    { dmg: 4,  click: [1500, 0.12, 0.010], slap: [420, 0.9, 0.30, 0.060], thump: [130, 72, 0.070, 0.34], sub: [62, 44, 0.10, 0.12] }
+  jab:      { dmg: 6,  click: [5200, 0.52, 0.009], slap: [3200, 1.1, 0.46, 0.042], thump: [240, 105, 0.055, 0.42], sub: [70, 42, 0.17, 0.13] },
+  cross:    { dmg: 11, click: [4200, 0.44, 0.010], slap: [2400, 1.0, 0.46, 0.058], thump: [205, 78, 0.085, 0.55], sub: [65, 36, 0.25, 0.26] },
+  hook:     { dmg: 14, click: [3400, 0.36, 0.011], slap: [1800, 0.9, 0.48, 0.082], thump: [180, 62, 0.115, 0.62], sub: [60, 33, 0.32, 0.36] },
+  uppercut: { dmg: 18, click: [2200, 0.16, 0.012], slap: [950, 0.8, 0.30, 0.100], thump: [150, 40, 0.190, 0.72], sub: [56, 28, 0.46, 0.56] },
+  kick:     { dmg: 15, click: [2600, 0.20, 0.010], slap: [620, 0.7, 0.34, 0.090], thump: [165, 48, 0.140, 0.66], sub: [58, 30, 0.34, 0.46] },
+  block:    { dmg: 4,  click: [1500, 0.14, 0.010], slap: [420, 0.9, 0.38, 0.075], thump: [130, 72, 0.090, 0.38], sub: [62, 44, 0.20, 0.18] }
 };
 
 const IMPACT_SCALE = 0.6;
@@ -291,7 +296,7 @@ const SOUNDS = {
   hook:     { bus: 'sfx', dur: 0.32, build: (K, d, t, o) => impact(K, d, t, o, 'hook') },
   uppercut: { bus: 'sfx', dur: 0.44, build: (K, d, t, o) => impact(K, d, t, o, 'uppercut') },
   kick:     { bus: 'sfx', dur: 0.36, build: (K, d, t, o) => impact(K, d, t, o, 'kick') },
-  block:    { bus: 'sfx', dur: 0.20, build: (K, d, t, o) => impact(K, d, t, o, 'block') },
+  block:    { bus: 'sfx', gain: 1.3, dur: 0.20, build: (K, d, t, o) => impact(K, d, t, o, 'block') },
 
   // Bright, metallic, inharmonic. A parry should cut through a crowd roar,
   // so it lives an octave above everything else in the mix.
@@ -318,9 +323,9 @@ const SOUNDS = {
       const p = pitchOf(K, o) * (0.9 + K.r() * 0.22);
       K.noise(d, t, {
         type: 'bandpass', f0: 520 * p, f1: 2500 * p, f2: 780 * p, fTime: 0.085,
-        Q: 1.7, peak: 0.26 * (o.power ?? 1), a: 0.075, d: 0.13
+        Q: 1.7, peak: 0.62 * (o.power ?? 1), a: 0.075, d: 0.13
       });
-      K.noise(d, t + 0.02, { type: 'lowpass', f0: 300 * p, Q: 1.2, peak: 0.09, a: 0.06, d: 0.10 });
+      K.noise(d, t + 0.02, { type: 'lowpass', f0: 300 * p, Q: 1.2, peak: 0.22, a: 0.06, d: 0.10 });
       return 0.24;
     }
   },
@@ -335,10 +340,14 @@ const SOUNDS = {
       K.tone(d, t, { type: 'sine', f0: 95 * p, f1: 28 * p, d: 0.34, fTime: 0.11, peak: 0.52 * w, a: 0.003 });
       K.noise(d, t, { type: 'lowpass', f0: 520 * p, Q: 1.1, peak: 0.30 * w, a: 0.002, d: 0.12 });
       K.noise(d, t + 0.006, { type: 'bandpass', f0: 1800 * (0.9 + r() * 0.2), Q: 0.8, peak: 0.13 * w, a: 0.004, d: 0.18 });
-      const b = t + 0.13 + r() * 0.05;
-      K.tone(d, b, { type: 'sine', f0: 72 * p, f1: 30 * p, d: 0.18, peak: 0.22 * w, a: 0.003 });
-      K.noise(d, b, { type: 'lowpass', f0: 380, Q: 1, peak: 0.12 * w, a: 0.002, d: 0.07 });
-      return 0.55;
+      // Room rumble under the impact, which is the part you feel.
+      K.tone(d, t, { type: 'sine', f0: 48 * p, f1: 26 * p, d: 0.55, fTime: 0.3, peak: 0.26 * w, a: 0.012 });
+      const b = t + 0.14 + r() * 0.05;
+      K.tone(d, b, { type: 'sine', f0: 72 * p, f1: 30 * p, d: 0.26, peak: 0.24 * w, a: 0.003 });
+      K.noise(d, b, { type: 'lowpass', f0: 380, Q: 1, peak: 0.14 * w, a: 0.002, d: 0.09 });
+      // The scrape of a shoulder sliding to a stop.
+      K.noise(d, b + 0.05, { type: 'bandpass', f0: 900, f1: 500, Q: 1.4, peak: 0.09 * w, a: 0.03, d: 0.30 });
+      return 0.72;
     }
   },
 
@@ -351,8 +360,8 @@ const SOUNDS = {
       const w = clamp((o.damage ?? 12) / 12, 0.5, 2);
       K.noise(d, t, { type: 'highpass', f0: 3200 * p, peak: 0.18, d: 0.007 });
       K.tone(d, t, { type: 'sine', f0: 190 * p, f1: 55 * p, d: 0.09, peak: 0.40 * w, a: 0.002 });
-      K.noise(d, t + 0.004, { type: 'bandpass', f0: 430 * p * (0.92 + r() * 0.16), Q: 16, peak: 0.34 * w, a: 0.003, d: 0.32 });
-      K.noise(d, t + 0.004, { type: 'bandpass', f0: 1250 * p, Q: 12, peak: 0.12 * w, a: 0.002, d: 0.15 });
+      K.noise(d, t + 0.004, { type: 'bandpass', f0: 430 * p * (0.92 + r() * 0.16), Q: 16, peak: 1.7 * w, a: 0.003, d: 0.55 });
+      K.noise(d, t + 0.004, { type: 'bandpass', f0: 1250 * p, Q: 12, peak: 0.6 * w, a: 0.002, d: 0.22 });
       return 0.40;
     }
   },
@@ -397,7 +406,7 @@ const SOUNDS = {
         K.noise(d, t, { type: 'lowpass', f0: 700, Q: 1, peak: 0.10 * i, a: 0.006, d: 0.08 });
         return 0.15;
       }
-      K.noise(d, t, { type: 'lowpass', f0: 1100 * (0.85 + r() * 0.3), Q: 1.1, peak: 0.26 * i, a: 0.0012, d: 0.055 });
+      K.noise(d, t, { type: 'lowpass', f0: 1100 * (0.85 + r() * 0.3), Q: 1.1, peak: 0.34 * i, a: 0.0012, d: 0.075 });
       K.noise(d, t, { type: 'highpass', f0: 2600, Q: 0.7, peak: 0.07 * i, a: 0.0008, d: 0.016 });
       K.tone(d, t, { type: 'sine', f0: 120 * p, f1: 58 * p, d: 0.055, peak: 0.16 * i, a: 0.002 });
       return 0.12;
@@ -416,9 +425,9 @@ const SOUNDS = {
       const len = K.formants(d, t, {
         vowel: r() < 0.55 ? 'ah' : 'uh', f0: f0 * (1.1 + hurt * 0.25), f1: f0 * 0.74,
         shift, shiftEnd: shift * 0.93, Q: 8.5,
-        peak: 0.30 + hurt * 0.22, a: 0.012, d: 0.22 + hurt * 0.1, breath: 0.5, tilt: 1
+        peak: 0.95 + hurt * 0.7, a: 0.012, d: 0.22 + hurt * 0.1, breath: 0.5, tilt: 1
       });
-      K.noise(d, t, { type: 'highpass', f0: 1800, peak: 0.05, a: 0.01, d: 0.09 });
+      K.noise(d, t, { type: 'highpass', f0: 1800, peak: 0.07, a: 0.01, d: 0.09 });
       return len + 0.04;
     }
   },
@@ -430,9 +439,9 @@ const SOUNDS = {
       const shift = o.shift ?? 1;
       const len = K.formants(d, t, {
         src: 'noise', vowel: 'uh', shift, shiftEnd: shift * 1.06, Q: 5,
-        peak: 0.30, a: 0.045, d: 0.30, breath: 1, f0: 100, d2: 0
+        peak: 1.05, a: 0.045, d: 0.30, breath: 1, f0: 100
       });
-      K.noise(d, t, { type: 'lowpass', f0: 2400 * shift, Q: 0.9, peak: 0.07, a: 0.05, d: 0.26 });
+      K.noise(d, t, { type: 'lowpass', f0: 2400 * shift, Q: 0.9, peak: 0.16, a: 0.05, d: 0.26 });
       return len + 0.04;
     }
   },
@@ -453,7 +462,7 @@ const SOUNDS = {
         last = gt;
       }
       K.formants(d, last + 0.11, {
-        src: 'noise', vowel: 'oh', shift, Q: 6, peak: 0.16, a: 0.03, d: 0.20, breath: 1, f0: 100
+        src: 'noise', vowel: 'oh', shift, Q: 6, peak: 0.55, a: 0.03, d: 0.20, breath: 1, f0: 100
       });
       return 0.52;
     }
@@ -470,9 +479,9 @@ const SOUNDS = {
       K.formants(d, t, {
         vowel: r() < 0.5 ? 'ah' : 'eh', f0: f0 * 1.15, f1: f0 * 0.9,
         shift, shiftEnd: shift * 0.95, Q: 7,
-        peak: 0.24 * (o.power ?? 1), a: 0.055, hold: 0.09, d: 0.45, breath: 0.7
+        peak: 0.78 * (o.power ?? 1), a: 0.055, hold: 0.09, d: 0.45, breath: 0.7
       });
-      K.noise(d, t + 0.01, { type: 'bandpass', f0: 1100 * shift, Q: 1.2, peak: 0.08 * (o.power ?? 1), a: 0.06, d: 0.5 });
+      K.noise(d, t + 0.01, { type: 'bandpass', f0: 1100 * shift, Q: 1.2, peak: 0.26 * (o.power ?? 1), a: 0.06, d: 0.5 });
       return 0.9;
     }
   },
@@ -634,7 +643,7 @@ export class CrowdBed {
     K.formants(g, t, {
       vowel: r() < 0.4 ? 'ah' : (r() < 0.6 ? 'eh' : 'uh'),
       f0: f0 * (1 + r() * 0.2), f1: f0 * 0.85, shift, Q: 6,
-      peak: 0.5, a: 0.02 + r() * 0.04, d, breath: 0.8
+      peak: 1.6, a: 0.02 + r() * 0.04, d, breath: 0.8
     });
     K._live.push({ g, p, t: t + d + 0.4 });
   }
@@ -681,7 +690,7 @@ export class CrowdBed {
         vowel: r() < 0.5 ? 'ah' : 'eh',
         f0: (130 + r() * 190) * (1 + r() * 0.15), f1: (110 + r() * 120),
         shift, shiftEnd: shift * (0.9 + r() * 0.2), Q: 5 + r() * 5,
-        peak: 0.22 / Math.sqrt(layers) * 3, a: 0.05 + r() * 0.12,
+        peak: 0.72 / Math.sqrt(layers) * 3, a: 0.05 + r() * 0.12,
         hold: dur * 0.18, d: dur * (0.45 + r() * 0.4), breath: 0.9
       });
     }

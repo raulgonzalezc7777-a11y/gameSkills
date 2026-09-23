@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>LAST CALL - character turntable</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #14161a; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #meta {
+    position: fixed; left: 10px; top: 8px; z-index: 5;
+    font: 12px/1.45 ui-monospace, Menlo, monospace; color: #cfd6df;
+    text-shadow: 0 1px 2px #000; white-space: pre; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div id="meta">booting</div>
+<script type="module">
+import * as THREE from 'three';
+import { buildFighter } from './src/characters/builder.js';
+import { ROSTER } from './src/characters/roster.js';
+
+// Character turntable. Three fighters on a neutral studio stage so the model,
+// not the nightclub grade, is what gets judged: a wide rotating row, an inset
+// head close up, and an inset of a bent elbow and bent knee so joint
+// deformation is visible rather than assumed.
+const params = new URLSearchParams(location.search);
+const pick = (k, d) => (params.has(k) ? params.get(k) : d);
+
+const canvas = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight, false);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#1b1e24');
+
+// A neutral studio dome, PMREM filtered. Without one, every PBR material falls
+// to black in shadow and the judgement is about lighting, not modelling.
+function studioEnv() {
+  const w = 128, h = 64;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0.00, '#e8eef6');
+  grad.addColorStop(0.42, '#9aa6b4');
+  grad.addColorStop(0.55, '#5d6570');
+  grad.addColorStop(1.00, '#2a2d33');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = 'rgba(255,255,255,0.95)';
+  g.beginPath(); g.ellipse(w * 0.30, h * 0.24, w * 0.11, h * 0.13, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(210,225,245,0.55)';
+  g.beginPath(); g.ellipse(w * 0.76, h * 0.34, w * 0.14, h * 0.16, 0, 0, Math.PI * 2); g.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  const pm = new THREE.PMREMGenerator(renderer);
+  const rt = pm.fromEquirectangular(t);
+  pm.dispose(); t.dispose();
+  return rt.texture;
+}
+scene.environment = studioEnv();
+scene.environmentIntensity = 1.0;
+
+const key = new THREE.DirectionalLight('#fff4e4', 2.6);
+key.position.set(2.6, 4.2, 3.4);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 0.5; key.shadow.camera.far = 14;
+key.shadow.camera.left = -3.2; key.shadow.camera.right = 3.2;
+key.shadow.camera.top = 3.2; key.shadow.camera.bottom = -0.6;
+key.shadow.bias = -0.0008;
+key.shadow.normalBias = 0.018;
+scene.add(key);
+
+const fill = new THREE.DirectionalLight('#9fc0e8', 0.85);
+fill.position.set(-3.4, 2.0, 1.6);
+scene.add(fill);
+
+const rim = new THREE.DirectionalLight('#ffd9b0', 2.1);
+rim.position.set(-1.2, 2.6, -4.0);
+scene.add(rim);
+
+scene.add(new THREE.HemisphereLight('#c8d6e8', '#33302c', 0.45));
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(7, 64).rotateX(-Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: '#4a4d54', roughness: 0.78, metalness: 0.0 })
+);
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ---- fighters --------------------------------------------------------------
+const ids = pick('cast', 'boiler,dez,bogdan').split(',');
+const cast = ids.map((id) => ROSTER.find((f) => f.id === id) || ROSTER[0]);
+const rigs = [];
+let tri = 0;
+cast.forEach((spec, i) => {
+  const rig = buildFighter(spec);
+  rig.group.position.set((i - (cast.length - 1) / 2) * 1.15, 0, 0);
+  scene.add(rig.group);
+  rigs.push(rig);
+  tri += rig.triangles;
+});
+
+// Pose helpers. rigposer owns this in the real game; here the poses are set
+// once so a still frame shows a bent elbow, a bent knee and a turned head.
+function guard(rig, s) {
+  const B = rig.bones;
+  for (const S of ['L', 'R']) {
+    const sg = S === 'L' ? 1 : -1;
+    B['upperArm' + S].rotation.set(-0.62 * s, 0.10 * sg * s, sg * (1.35 - 0.62 * s));
+    B['forearm' + S].rotation.set(0, -sg * 0.55 * s, sg * (0.15 + 1.55 * s));
+    B['hand' + S].rotation.set(0, 0, sg * 0.25 * s);
+  }
+  B.chest.rotation.set(0.06 * s, -0.30 * s, 0);
+  B.hips.rotation.set(0, -0.20 * s, 0);
+  B.spine.rotation.set(0.05 * s, -0.08 * s, 0);
+  B.head.rotation.set(-0.04 * s, 0.24 * s, 0);
+  B.thighL.rotation.set(-0.22 * s, 0.26 * s, 0);
+  B.shinL.rotation.set(0.40 * s, 0, 0);
+  B.footL.rotation.set(-0.18 * s, 0, 0);
+  B.thighR.rotation.set(0.26 * s, -0.10 * s, 0);
+  B.shinR.rotation.set(0.30 * s, 0, 0);
+  B.footR.rotation.set(-0.12 * s, 0, 0);
+  B.hips.position.y = 0.98 - 0.055 * s;
+}
+guard(rigs[0], 1);
+if (rigs[1]) guard(rigs[1], 0.35);
+if (rigs[2]) guard(rigs[2], 0.8);
+
+// Damage and sweat, so the preview shows what a third round looks like.
+if (rigs[0]) {
+  rigs[0].setDamage('head', 0.5);
+  rigs[0].setDamage('head', 0.45);
+  rigs[0].setDamage('body', 0.4);
+  rigs[0].setSweat(0.9);
+}
+if (rigs[2]) { rigs[2].setDamage('body', 0.3); rigs[2].setSweat(0.45); }
+if (rigs[1]) rigs[1].setSweat(0.2);
+
+// ---- cameras ---------------------------------------------------------------
+const wide = new THREE.PerspectiveCamera(34, 16 / 9, 0.1, 60);
+const head = new THREE.PerspectiveCamera(22, 1, 0.05, 20);
+const joint = new THREE.PerspectiveCamera(26, 1, 0.05, 20);
+
+const view = pick('view', 'all');
+const _t = new THREE.Vector3();
+
+function aim(cam, target, dist, yaw, pitch, up) {
+  cam.position.set(
+    target.x + Math.sin(yaw) * Math.cos(pitch) * dist,
+    target.y + Math.sin(pitch) * dist,
+    target.z + Math.cos(yaw) * Math.cos(pitch) * dist
+  );
+  cam.up.set(0, 1, 0);
+  cam.lookAt(target.x, target.y + (up || 0), target.z);
+}
+
+let frames = 0;
+const clock = new THREE.Clock();
+
+function renderView(cam, x, y, w, h) {
+  cam.aspect = w / h;
+  cam.updateProjectionMatrix();
+  renderer.setViewport(x, y, w, h);
+  renderer.setScissor(x, y, w, h);
+  renderer.setScissorTest(true);
+  renderer.render(scene, cam);
+}
+
+function frame() {
+  const t = clock.getElapsedTime();
+  const spin = params.has('spin') ? parseFloat(params.get('spin')) : t * 0.32;
+  for (let i = 0; i < rigs.length; i++) rigs[i].group.rotation.y = spin + i * 0.55;
+
+  const W = renderer.domElement.width, Hh = renderer.domElement.height;
+
+  if (view === 'head' || view === 'joint') {
+    const rig = rigs[0];
+    rig.bones.head.updateWorldMatrix(true, false);
+    _t.setFromMatrixPosition(rig.bones.head.matrixWorld);
+    if (view === 'head') {
+      aim(head, _t, 0.62, spin + 0.30, 0.10, 0.10);
+      renderView(head, 0, 0, W, Hh);
+    } else {
+      rig.bones.forearmL.updateWorldMatrix(true, false);
+      _t.setFromMatrixPosition(rig.bones.forearmL.matrixWorld);
+      aim(joint, _t, 0.85, spin + 0.9, 0.12, 0);
+      renderView(joint, 0, 0, W, Hh);
+    }
+  } else {
+    aim(wide, new THREE.Vector3(0, 0.95, 0), 4.35, 0.10, 0.09, 0.0);
+    renderView(wide, 0, 0, W, Hh);
+
+    const iw = Math.round(W * 0.28), ih = iw;
+    const rig = rigs[0];
+    rig.bones.head.updateWorldMatrix(true, false);
+    _t.setFromMatrixPosition(rig.bones.head.matrixWorld);
+    aim(head, _t, 0.60, spin + 0.28, 0.10, 0.09);
+    renderView(head, W - iw - 8, Hh - ih - 8, iw, ih);
+
+    rig.bones.forearmL.updateWorldMatrix(true, false);
+    _t.setFromMatrixPosition(rig.bones.forearmL.matrixWorld);
+    aim(joint, _t, 0.80, spin + 1.05, 0.10, 0);
+    renderView(joint, W - iw - 8, Hh - ih * 2 - 18, iw, ih);
+  }
+
+  renderer.setScissorTest(false);
+  frames++;
+  window.__frameCount = frames;
+  requestAnimationFrame(frame);
+}
+
+addEventListener('resize', () => renderer.setSize(innerWidth, innerHeight, false));
+
+document.getElementById('meta').textContent =
+  cast.map((c, i) => c.id + ' [' + c.build + '] ' + rigs[i].triangles + ' tris').join('\n') +
+  '\ntotal ' + tri + ' tris   view=' + view;
+
+frame();
+</script>
+</body>
+</html>

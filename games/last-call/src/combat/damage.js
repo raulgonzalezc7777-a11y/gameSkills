@@ -102,7 +102,7 @@ function blocked(attacker, target, move, hurt, dmg, ctx, counter) {
   target.stamina = Math.max(0, target.stamina - dmg * TUNE.blockStamPerDamage);
   // A low attack eats guard twice as fast: blocking everything standing up is
   // not meant to be a strategy.
-  target.guard -= dmg * (move.guard === 'low' ? 4.4 : 2.2);
+  target.guard -= dmg * (move.guard === 'low' ? 2.2 : 1.2);
   target.stun = Math.max(target.stun, 0.11);
 
   knockback(attacker, target, move, 0.35);

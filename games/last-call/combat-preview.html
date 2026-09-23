@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>LAST CALL - combat preview</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #07080d; color: #e8ecf5; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .panel { position: fixed; background: rgba(6,8,14,0.82); border: 1px solid rgba(120,160,255,0.28); border-radius: 6px; padding: 8px 10px; backdrop-filter: blur(2px); }
+  #left { left: 10px; top: 10px; width: 310px; }
+  #right { right: 10px; top: 10px; width: 310px; }
+  #log { left: 10px; bottom: 10px; width: 470px; max-height: 190px; overflow: hidden; }
+  #phase { right: 10px; bottom: 10px; width: 310px; }
+  h2 { margin: 0 0 6px; font: 700 13px/1.2 ui-monospace, monospace; letter-spacing: .08em; }
+  .row { display: flex; justify-content: space-between; gap: 8px; }
+  .k { color: #7f8db0; }
+  .v { color: #e8ecf5; font-weight: 600; }
+  .bar { height: 7px; border-radius: 4px; background: #1a2030; margin: 2px 0 5px; overflow: hidden; }
+  .bar i { display: block; height: 100%; }
+  .hp i { background: linear-gradient(90deg,#ff5a6e,#ffb64d); }
+  .st i { background: linear-gradient(90deg,#3ad07a,#9fe870); }
+  .bz i { background: linear-gradient(90deg,#8f6bff,#ff7ad9); }
+  .gd i { background: linear-gradient(90deg,#4aa8ff,#9fd8ff); }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; background: #1d2740; color: #9fd8ff; margin-right: 4px; }
+  .hot { background: #4a1420; color: #ff9db0; }
+  .go { background: #123a24; color: #8ff0b5; }
+  .ev { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ev b { color: #ffd166; }
+  .dim { color: #64708c; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="panel" id="left"></div>
+<div class="panel" id="right"></div>
+<div class="panel" id="log"></div>
+<div class="panel" id="phase"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { Fighter } from './src/combat/fighter.js';
+import { MOVES, TUNE, buzzTier, STRIKES } from './src/combat/moves.js';
+import { Director } from './src/game/director.js';
+import { Brain } from './src/ai/brain.js';
+import { bus, EV } from './src/core/events.js';
+import { rng } from './src/core/rng.js';
+
+// Combat preview. Not a game frame: a bench. It runs the real Fighter with a
+// fixed 1/60 step, draws every hurtbox and every swept hitbox, and plays
+// scripted sequences that each prove one mechanic. The sim steps on rendered
+// frames rather than wall clock, because this box renders at about 1 fps and a
+// wall-clock demo would be a different moment in every screenshot.
+
+const QS = new URLSearchParams(location.search);
+const SIM = QS.has('sim');
+const STEP = 1 / 60;
+
+// ------------------------------------------------------------------ scene
+let renderer = null, scene = null, camera = null;
+if (!SIM) {
+  renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: false });
+  renderer.setPixelRatio(1);
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = false;
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0c14);
+  scene.fog = new THREE.Fog(0x0a0c14, 12, 34);
+  camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 80);
+  camera.position.set(0.4, 2.35, 6.4);
+  camera.lookAt(0, 1.15, 0);
+
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(7, 48),
+    new THREE.MeshStandardMaterial({ color: 0x11141d, roughness: 0.9, metalness: 0.05 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
+  const grid = new THREE.PolarGridHelper(7, 8, 7, 48, 0x1d2740, 0x161b28);
+  grid.position.y = 0.002;
+  scene.add(grid);
+  scene.add(new THREE.HemisphereLight(0x8fb4ff, 0x120c18, 1.05));
+  const key = new THREE.DirectionalLight(0xffe6c2, 1.5); key.position.set(3.5, 6, 4.5); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x7aa2ff, 0.9); rim.position.set(-4, 3.2, -4); scene.add(rim);
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+}
+
+// ------------------------------------------------------- arena stand-in
+// The real arena parks its bottles out by the tables. The bench puts a few
+// inside the ring so the prop sequence can be watched from one camera.
+function makeArena() {
+  const group = new THREE.Group();
+  if (scene) scene.add(group);
+  const props = [];
+  const geo = new THREE.CylinderGeometry(0.036, 0.046, 0.27, 9);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x6fe3a0, roughness: 0.25, metalness: 0.1 });
+  const spots = [[-1.9, 1.5], [2.1, 1.3], [-2.4, -1.4], [2.5, -1.2]];
+  for (const [x, z] of spots) {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, 0.14, z);
+    group.add(m);
+    props.push({ mesh: m, type: 'bottle', position: m.position });
+  }
+  return { group, props, radius: 7, floorY: 0, spawnPoints: [], colliders: [] };
+}
+const arena = makeArena();
+
+// ------------------------------------------------------------- fighters
+const SPEC_A = { name: 'DIEGO "EL TANQUE"', skin: '#b87c52', shirt: '#c0392b', pants: '#1c2233', bulk: 1.22, facing: 0 };
+const SPEC_B = { name: 'KAI KOMATSU', skin: '#e0b28a', shirt: '#1f6f8b', pants: '#14181f', bulk: 1.02, facing: Math.PI };
+
+const ctxShared = { arena };
+const A = new Fighter(SPEC_A, ctxShared);
+const B = new Fighter(SPEC_B, ctxShared);
+if (scene) scene.add(A.object, B.object);
+
+let director = new Director([A, B], { rounds: 1, roundSeconds: 99 });
+A.director = B.director = director;
+A.ctx.director = B.ctx.director = director;
+
+if (!SIM) { A.setDebug(scene, true); B.setDebug(scene, true); }
+
+// ------------------------------------------------------------ event log
+const LOG = [];
+const ALL = [];
+const logEv = (name, text, hot) => {
+  if (recording) return;              // the balance harness keeps its own tally
+  LOG.unshift({ t: simTime, name, text, hot });
+  if (LOG.length > 11) LOG.pop();
+  ALL.push({ t: +simTime.toFixed(2), phase: PHASES[phaseIndex] ? PHASES[phaseIndex].name : '-', name, text });
+  if (ALL.length > 4000) ALL.shift();
+};
+const nameOf = (f) => (f === A ? 'A' : f === B ? 'B' : 'anim');
+{
+  bus.on(EV.HIT_LANDED, (p) => logEv('HIT', `${nameOf(p.attacker)} ${p.move.name} -> ${nameOf(p.target)} ${p.zone} ${p.damage.toFixed(1)}${p.counter ? ' COUNTER' : ''}${p.combo > 1 ? ' x' + p.combo : ''}`, p.counter));
+  bus.on(EV.HIT_BLOCKED, (p) => logEv('BLOCK', `${nameOf(p.target)} blocked ${p.move.name} chip ${p.damage.toFixed(1)}`));
+  bus.on(EV.HIT_WHIFF, (p) => logEv('WHIFF', `${nameOf(p.fighter)} whiffed${p.dodged ? ' (dodged)' : ''}`));
+  bus.on(EV.PARRY, (p) => logEv('PARRY', `${nameOf(p.fighter)} parried ${nameOf(p.attacker)} ${p.move.name}`, true));
+  bus.on('combat:guardBreak', (p) => logEv('GUARD', `${nameOf(p.fighter)} guard broken by ${nameOf(p.by)}`, true));
+  bus.on(EV.STUMBLE, (p) => logEv(p.grace ? 'GRACE' : 'STUMBLE', p.grace ? `${nameOf(p.fighter)} DRUNKEN GRACE` : `${nameOf(p.fighter)} lurched${p.fell ? ' and fell' : ''}`, p.grace));
+  bus.on(EV.COMBO, (p) => logEv('COMBO', `${nameOf(p.fighter)} chain x${p.count} (${p.move})`));
+  bus.on(EV.KNOCKDOWN, (p) => logEv('DOWN', `${nameOf(p.fighter)} knocked down`, true));
+  bus.on(EV.KO, (p) => logEv('KO', `${nameOf(p.fighter)} KO by ${nameOf(p.by)}`, true));
+  bus.on(EV.PROP_BREAK, (p) => logEv('PROP', `${p.type} shattered`, true));
+  bus.on('borrachera:start', (p) => logEv('SUPER', `${nameOf(p.fighter)} ${p.name}`, true));
+  bus.on('borrachera:end', (p) => logEv('SUPER', `${nameOf(p.fighter)} finished, ${p.hits} hits`));
+  bus.on(EV.DRINK, (p) => logEv('DRINK', `${nameOf(p.fighter)} sips`));
+}
+
+// --------------------------------------------------------- scripted bench
+// Every phase proves one mechanic. Presses are placed against the frame data,
+// not eyeballed: a cross connects on frame 8, so the parry press at +0.10 s is
+// inside the 0.12 s window by construction.
+const iA = blankIntent(), iB = blankIntent();
+function blankIntent() {
+  return { moveX: 0, moveY: 0, sprint: false, block: false, action: null, dodge: false, grab: false, taunt: false, special: false, drink: false };
+}
+function clearIntents() {
+  for (const i of [iA, iB]) {
+    i.moveX = 0; i.moveY = 0; i.sprint = false; i.block = false; i.action = null;
+    i.dodge = false; i.grab = false; i.taunt = false; i.special = false; i.drink = false;
+  }
+}
+function place(a, b, gap) {
+  a.position.set(-gap / 2, 0, 0); a.facing = Math.PI / 2;
+  b.position.set(gap / 2, 0, 0); b.facing = -Math.PI / 2;
+  a.velocity.set(0, 0, 0); b.velocity.set(0, 0, 0);
+}
+function heal(f, buzz) {
+  f.health = 100; f.parts.head = 100; f.parts.body = 100; f.parts.legs = 100;
+  f.stamina = 100; f.guard = TUNE.guardMax; f.drunk = buzz;
+  f.dead = false; f.downed = 0; f.stun = 0; f.attacking = null;
+  f.resetForRound();
+}
+// True on the single step that crosses 'time'.
+const at = (t, time) => t >= time && t - STEP < time;
+
+const PHASES = [
+  {
+    name: 'COMBO CHAIN', note: 'cancel windows, compounding cost, EV.COMBO', dur: 3.4,
+    setup() { place(A, B, 1.15); heal(A, 30); heal(B, 30); },
+    run(t) {
+      iA.moveY = 0.35;
+      // Each press lands inside the previous move's cancel window.
+      if (at(t, 0.40)) iA.action = 'jab';
+      if (at(t, 0.62)) iA.action = 'jab';
+      if (at(t, 0.84)) iA.action = 'cross';
+      if (at(t, 1.12)) iA.action = 'hook';
+      if (at(t, 1.44)) iA.action = 'uppercut';
+      if (at(t, 1.82)) iA.action = 'cross';
+      if (at(t, 2.10)) iA.action = 'kick';
+    }
+  },
+  {
+    name: 'PARRY', note: 'block pressed inside 0.12 s of contact', dur: 2.6,
+    setup() { place(A, B, 1.30); heal(A, 20); heal(B, 20); },
+    run(t) {
+      if (at(t, 0.50)) iA.action = 'cross';
+      // Cross connects on frame 8, i.e. 0.133 s after the press.
+      iB.block = t >= 0.60 && t < 1.05;
+      if (at(t, 1.30)) iB.action = 'uppercut';  // the free punish the parry buys
+      if (at(t, 1.62)) iB.action = 'cross';
+    }
+  },
+  {
+    name: 'COUNTER HIT', note: '1.6x during the opponent startup, chain budget refreshed', dur: 2.6,
+    setup() { place(A, B, 1.25); heal(A, 40); heal(B, 40); },
+    run(t) {
+      if (at(t, 0.50)) iB.action = 'uppercut';   // 13 frames of startup
+      if (at(t, 0.58)) iA.action = 'jab';        // lands on frame 5 of its own, inside that startup
+      if (at(t, 0.86)) iA.action = 'cross';
+      if (at(t, 1.16)) iA.action = 'hook';
+    }
+  },
+  {
+    name: 'GUARD BREAK', note: 'guard bleeds under pressure, low attacks bleed it faster', dur: 4.2,
+    setup() { place(A, B, 1.45); heal(A, 55); heal(B, 55); },
+    run(t) {
+      iB.block = true;            // held from the first frame, so it is never a parry
+      iA.moveY = 0.2;
+      if (at(t, 0.50)) iA.action = 'kick';
+      if (at(t, 1.20)) iA.action = 'kick';
+      if (at(t, 1.90)) iA.action = 'hook';
+      if (at(t, 2.50)) iA.action = 'kick';
+      if (at(t, 3.10)) iA.action = 'uppercut';
+    }
+  },
+  {
+    name: 'DRUNKEN GRACE', note: 'the lurch that happens to dodge', dur: 3.0,
+    setup() { place(A, B, 1.20); heal(A, 40); heal(B, 95); },
+    run(t) {
+      if (at(t, 0.60)) iA.action = 'hook';       // connects 0.167 s later
+      if (at(t, 0.70)) B.startLurch();           // i-frames open 0.06 s in
+      if (at(t, 1.40)) iA.action = 'cross';
+      if (at(t, 1.90)) iB.action = 'uppercut';   // the punish a grace hands you
+    }
+  },
+  {
+    name: 'PROPS', note: 'grab, swing, shatter, restock, throw', dur: 5.0,
+    setup() { A.position.set(-1.9, 0, 1.0); B.position.set(-1.2, 0, -0.2); A.facing = 0; B.facing = Math.PI; heal(A, 50); heal(B, 50); },
+    run(t) {
+      if (at(t, 0.35)) iA.grab = true;           // bottle in reach
+      if (at(t, 1.10)) iA.action = 'hook';       // becomes bottleSwing, breaks on contact
+      if (at(t, 2.20)) iA.grab = true;           // another bottle
+      if (at(t, 3.10)) iA.grab = true;           // same button throws it
+      if (t > 1.2 && t < 2.2) iB.moveY = 0.4;
+    }
+  },
+  {
+    name: 'BORRACHERA', note: 'full hype spent on the archetype super', dur: 4.2,
+    setup() { place(A, B, 1.9); heal(A, 80); heal(B, 60); director.hype = 100; },
+    run(t) {
+      // The director decays hype every step, so hold the meter pinned until
+      // the button is pressed rather than pretending 99.8 is full.
+      if (t < 0.42) director.hype = 100;
+      if (at(t, 0.40)) iA.special = true;
+    }
+  },
+  {
+    name: 'AI SPAR', note: 'both brains, live, no script', dur: 6.0,
+    setup() { place(A, B, 2.6); heal(A, 45); heal(B, 45); },
+    run(t, dt) {
+      aiInto(iA, A, B, brainA, dt);
+      aiInto(iB, B, A, brainB, dt);
+    }
+  }
+];
+
+const brainA = new Brain(A, B, 0.7);
+const brainB = new Brain(B, A, 0.65);
+
+// The brains only produce the old five-button intent, so the bench layers the
+// new verbs on top rather than editing ai/brain.js, which belongs to AI.
+function aiInto(out, f, o, brain, dt, targetBuzz = 60) {
+  const i = brain.update(dt);
+  out.moveX = i.moveX; out.moveY = i.moveY; out.sprint = !!i.sprint;
+  out.block = !!i.block; out.action = i.action;
+  const dist = Math.hypot(o.position.x - f.position.x, o.position.z - f.position.z);
+  out.dodge = !!(o.attacking && o.attacking.phase === 'startup' && dist < 1.9 && rng.chance(2.2 * dt));
+  out.drink = f.drunk < targetBuzz && dist > 2.0 && !f.attacking && rng.chance(1.4 * dt);
+  out.grab = dist < 1.2 && rng.chance(0.7 * dt);
+  out.taunt = dist > 3.2 && rng.chance(0.25 * dt);
+  out.special = !!(f.ctx.director && f.ctx.director.borracheraReady && rng.chance(3 * dt));
+  return out;
+}
+
+let phaseIndex = 0, phaseT = 0, simTime = 0, entered = false;
+function enterPhase(i) {
+  phaseIndex = i % PHASES.length;
+  phaseT = 0;
+  entered = true;
+  PHASES[phaseIndex].setup();
+}
+
+function step(dt) {
+  clearIntents();
+  if (!entered) enterPhase(0);
+  const ph = PHASES[phaseIndex];
+  ph.run(phaseT, dt);
+  director.update(dt);
+  A.update(dt, iA, B);
+  B.update(dt, iB, A);
+  phaseT += dt; simTime += dt;
+  if (phaseT >= ph.dur) enterPhase(phaseIndex + 1);
+}
+
+// Seek: step without rendering so a screenshot can name the exact moment it
+// wants. 'phase' picks the sequence, 'at' the offset inside it.
+function seek() {
+  const want = QS.get('phase');
+  const offset = parseFloat(QS.get('at') || '0');
+  let idx = 0;
+  if (want) {
+    const n = PHASES.findIndex((p) => p.name.toLowerCase().replace(/[^a-z]/g, '').includes(want.toLowerCase().replace(/[^a-z]/g, '')));
+    if (n >= 0) idx = n;
+  }
+  enterPhase(idx);
+  const steps = Math.min(4000, Math.round(offset / STEP));
+  for (let i = 0; i < steps; i++) step(STEP);
+}
+
+// ------------------------------------------------------------- readout
+const elLeft = document.getElementById('left');
+const elRight = document.getElementById('right');
+const elLog = document.getElementById('log');
+const elPhase = document.getElementById('phase');
+
+const bar = (cls, v, max) => `<div class="bar ${cls}"><i style="width:${Math.max(0, Math.min(100, (v / max) * 100)).toFixed(1)}%"></i></div>`;
+
+function card(f, label) {
+  const fs = f.frameState();
+  const tier = buzzTier(f.drunk);
+  const st = f.borrachera.active ? 'BORRACHERA' : f.dead ? 'KO' : f.downed > 0 ? 'DOWNED' : f.clinch ? 'CLINCH ' + f.clinch.role
+    : f.stun > 0 ? 'STUN' : f.lurching ? 'LURCH' : f.dodging ? 'DODGE' : f.blocking ? 'BLOCK' : fs.phase.toUpperCase();
+  return `<h2>${label} ${f.spec.name}</h2>
+    <div class="row"><span class="k">state</span><span class="v">${st}${f.iFrames > 0 ? ' <span class="tag go">i-frames</span>' : ''}</span></div>
+    <div class="row"><span class="k">move</span><span class="v">${fs.move} f${fs.frame}/${fs.total} ${fs.cancelable ? '<span class="tag go">cancel</span>' : ''}</span></div>
+    <div class="row"><span class="k">frames</span><span class="v dim">${fs.total ? `${fs.startup}s / ${fs.active}a / ${fs.recover}r` : '-'}</span></div>
+    <div class="row"><span class="k">health</span><span class="v">${f.health.toFixed(1)}</span></div>${bar('hp', f.health, 100)}
+    <div class="row"><span class="k">stamina</span><span class="v">${f.stamina.toFixed(0)}</span></div>${bar('st', f.stamina, 100)}
+    <div class="row"><span class="k">buzz ${tier.name}</span><span class="v">${f.drunk.toFixed(0)}</span></div>${bar('bz', f.drunk, 100)}
+    <div class="row"><span class="k">guard</span><span class="v">${f.guard.toFixed(0)}</span></div>${bar('gd', f.guard, 100)}
+    <div class="row"><span class="k">limbs</span><span class="v">H ${f.parts.head.toFixed(0)} / B ${f.parts.body.toFixed(0)} / L ${f.parts.legs.toFixed(0)}</span></div>
+    <div class="row"><span class="k">chain</span><span class="v">x${f.chain.count} (best ${f.chain.best}) cost x${f.chain.staminaMul.toFixed(2)} acc x${f.chain.accuracyMul.toFixed(2)}</span></div>
+    <div class="row"><span class="k">buzz curve</span><span class="v dim">pow ${tier.power.toFixed(2)} acc ${tier.accuracy.toFixed(2)} bal ${tier.balance.toFixed(2)} pain ${tier.pain.toFixed(2)}</span></div>
+    <div class="row"><span class="k">tally</span><span class="v dim">parry ${f.parryCount} grace ${f.graceCount} gbreak ${f.guardBreaks} prop ${f.prop ? f.prop.type : '-'}</span></div>`;
+}
+
+function draw() {
+  elLeft.innerHTML = card(A, 'A');
+  elRight.innerHTML = card(B, 'B');
+  const ph = PHASES[phaseIndex];
+  elPhase.innerHTML = `<h2>SEQUENCE ${phaseIndex + 1}/${PHASES.length}</h2>
+    <div class="row"><span class="k">phase</span><span class="v">${ph.name}</span></div>
+    <div class="row"><span class="k">proves</span><span class="v dim">${ph.note}</span></div>
+    <div class="row"><span class="k">t</span><span class="v">${phaseT.toFixed(2)} / ${ph.dur.toFixed(1)} s</span></div>
+    <div class="row"><span class="k">hype</span><span class="v">${director.hype.toFixed(0)}${director.borracheraReady ? ' <span class="tag hot">READY</span>' : ''}</span></div>
+    <div class="row"><span class="k">sim</span><span class="v dim">${simTime.toFixed(2)} s at 1/60 fixed</span></div>
+    <div class="row"><span class="k">boxes</span><span class="v dim">red head / amber body / blue legs / green hitbox</span></div>`;
+  let h = '<h2>EVENT LOG</h2>';
+  for (const e of LOG) h += `<div class="ev"><span class="dim">${e.t.toFixed(2)}</span> <span class="tag ${e.hot ? 'hot' : ''}">${e.name}</span> <b>${e.text}</b></div>`;
+  elLog.innerHTML = h;
+}
+
+// ------------------------------------------------------------- main loop
+if (!SIM) {
+  seek();
+  const perFrame = Math.max(1, parseInt(QS.get('speed') || '1', 10));
+  function frame() {
+    requestAnimationFrame(frame);
+    for (let i = 0; i < perFrame; i++) step(STEP);
+    draw();
+    renderer.render(scene, camera);
+    window.__frameCount = (window.__frameCount || 0) + 1;
+    window.__ready = true;
+  }
+  requestAnimationFrame(frame);
+}
+
+// ------------------------------------------------------- balance harness
+// AI versus AI, as fast as the tab will go, with every match reusing the same
+// two rigs so a thousand matches do not build a thousand skeletons.
+const STATS = {
+  matches: 0, totalTime: 0, kos: 0, timeouts: 0, rounds: 0,
+  moveUse: Object.create(null), moveDamage: Object.create(null), moveHits: Object.create(null),
+  moveWhiff: Object.create(null), moveBlocked: Object.create(null),
+  hits: 0, blocks: 0, whiffs: 0, parries: 0, graces: 0, guardBreaks: 0, knockdowns: 0,
+  supers: 0, propBreaks: 0, drinks: 0, maxCombo: 0, comboSum: 0, comboCount: 0,
+  zone: Object.create(null),
+  buzzBuckets: [], samples: []
+};
+for (let i = 0; i < 5; i++) STATS.buzzBuckets.push({ name: buzzTier([12, 37, 61, 81, 95][i]).name, wins: 0, n: 0 });
+
+let recording = false;
+function bump(obj, k, v) { obj[k] = (obj[k] || 0) + (v === undefined ? 1 : v); }
+bus.on(EV.HIT_LANDED, (p) => {
+  if (!recording) return;
+  STATS.hits++;
+  bump(STATS.moveHits, p.move.name);
+  bump(STATS.moveDamage, p.move.name, p.damage);
+  bump(STATS.zone, p.zone);
+  if (p.combo > STATS.maxCombo) STATS.maxCombo = p.combo;
+  if (p.combo > 1) { STATS.comboSum += p.combo; STATS.comboCount++; }
+});
+bus.on(EV.HIT_BLOCKED, (p) => { if (recording) { STATS.blocks++; bump(STATS.moveBlocked, p.move.name); } });
+bus.on(EV.HIT_WHIFF, (p) => { if (recording) STATS.whiffs++; });
+bus.on(EV.PARRY, () => { if (recording) STATS.parries++; });
+bus.on(EV.STUMBLE, (p) => { if (recording && p.grace) STATS.graces++; });
+bus.on('combat:guardBreak', () => { if (recording) STATS.guardBreaks++; });
+bus.on(EV.KNOCKDOWN, () => { if (recording) STATS.knockdowns++; });
+bus.on('borrachera:start', () => { if (recording) STATS.supers++; });
+bus.on(EV.PROP_BREAK, () => { if (recording) STATS.propBreaks++; });
+bus.on(EV.DRINK, () => { if (recording) STATS.drinks++; });
+
+function resetFighter(f, x, z, facing, buzz) {
+  f.position.set(x, 0, z);
+  f.velocity.set(0, 0, 0);
+  f.facing = facing;
+  f.health = 100; f.parts.head = 100; f.parts.body = 100; f.parts.legs = 100;
+  f.stamina = 100; f.drunk = buzz; f.dead = false; f.downed = 0; f.stun = 0;
+  f.attacking = null; f.blocking = false; f.moveUsage = Object.create(null);
+  f.parryCount = 0; f.graceCount = 0; f.guardBreaks = 0;
+  f.resetForRound();
+  f.chain.best = 0;
+}
+
+function runMatch(seconds, targetA, targetB) {
+  director.dispose();
+  director = new Director([A, B], { rounds: 1, roundSeconds: seconds });
+  director.phase = 'fight'; director.phaseTimer = 0;
+  A.ctx.director = B.ctx.director = director;
+  A.director = B.director = director;
+  resetFighter(A, -1.6, 0.3, Math.PI / 2, targetA * 0.5);
+  resetFighter(B, 1.6, -0.3, -Math.PI / 2, targetB * 0.5);
+  const bA = new Brain(A, B, 0.62), bB = new Brain(B, A, 0.62);
+  let t = 0, sumA = 0, sumB = 0, n = 0, result = 'time';
+  const maxSteps = Math.round(seconds / STEP);
+  for (let i = 0; i < maxSteps; i++) {
+    aiInto(iA, A, B, bA, STEP, targetA);
+    aiInto(iB, B, A, bB, STEP, targetB);
+    director.update(STEP);
+    A.update(STEP, iA, B);
+    B.update(STEP, iB, A);
+    t += STEP; sumA += A.drunk; sumB += B.drunk; n++;
+    if (A.dead || B.dead) { result = 'ko'; break; }
+  }
+  for (const f of [A, B]) for (const k in f.moveUsage) bump(STATS.moveUse, k, f.moveUsage[k]);
+  const winner = A.dead ? 1 : B.dead ? 0 : (A.health >= B.health ? 0 : 1);
+  STATS.matches++; STATS.totalTime += t;
+  if (result === 'ko') STATS.kos++; else STATS.timeouts++;
+  const avgA = sumA / n, avgB = sumB / n;
+  STATS.samples.push({ buzz: avgA, win: winner === 0 ? 1 : 0, hp: A.health });
+  STATS.samples.push({ buzz: avgB, win: winner === 1 ? 1 : 0, hp: B.health });
+  for (const s of [[avgA, winner === 0], [avgB, winner === 1]]) {
+    const idx = s[0] < 25 ? 0 : s[0] < 50 ? 1 : s[0] < 72 ? 2 : s[0] < 90 ? 3 : 4;
+    STATS.buzzBuckets[idx].n++;
+    if (s[1]) STATS.buzzBuckets[idx].wins++;
+  }
+  return { t, result, winner, avgA, avgB };
+}
+
+window.__runSim = (n = 20, seconds = 99) => {
+  recording = true;
+  for (let i = 0; i < n; i++) {
+    const ta = rng.range(8, 96), tb = rng.range(8, 96);
+    runMatch(seconds, ta, tb);
+  }
+  recording = false;
+  return JSON.parse(JSON.stringify(STATS));
+};
+window.__simStats = () => JSON.parse(JSON.stringify(STATS));
+// Runs every scripted sequence end to end and hands back the whole event
+// stream, which is how the sequences are verified without a screenshot each.
+window.__report = () => {
+  ALL.length = 0; simTime = 0;
+  for (let i = 0; i < PHASES.length; i++) {
+    enterPhase(i);
+    const n = Math.round(PHASES[i].dur / STEP);
+    for (let k = 0; k < n; k++) step(STEP);
+  }
+  return ALL.slice();
+};
+window.__moves = MOVES;
+window.__bench = { A, B, director, PHASES, step, STATS };
+window.__ready = true;
+if (SIM) window.__frameCount = 999;
+</script>
+</body>
+</html>

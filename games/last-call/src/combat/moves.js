@@ -10,43 +10,45 @@
 
 const F = 1 / 60;
 
-// limb: which bone drives the hitbox. extend: how far past that bone the
-// capsule reaches, which is the fist plus the forearm the pose does not always
-// straighten. hitR: hitbox radius. level: the reaction the target plays.
+// limb: which bone drives the hitbox and anchors its capsule. extend is the
+// slack past the bone. hitR is the capsule radius. level picks the reaction.
+// The far end of the capsule is authored in fighter space (reach, hitY) the way
+// a fighting game authors hitboxes, so the move has the range the table says
+// even while another owner is rewriting the poser under us.
 const RAW = {
-  // name        st  ac  rc   dmg  stam reach push level     limb     extend hitR cancel guard  type
-  jab:        [  5,  3,  9,   5.5,  5,  1.30, 1.2, 'light',  'handL', 0.16, 0.11, 0.30, 'high', 'strike'],
-  cross:      [  8,  4, 13,  10.0,  9,  1.45, 2.4, 'mid',    'handR', 0.18, 0.12, 0.26, 'high', 'strike'],
-  hook:       [ 10,  5, 17,  13.5, 12,  1.28, 3.0, 'heavy',  'handL', 0.20, 0.14, 0.22, 'high', 'strike'],
-  uppercut:   [ 13,  6, 21,  17.0, 16,  1.15, 3.6, 'launch', 'handR', 0.20, 0.15, 0.20, 'high', 'strike'],
-  kick:       [ 12,  6, 19,  14.0, 14,  1.70, 3.2, 'mid',    'footR', 0.24, 0.15, 0.18, 'low',  'strike'],
+  // name        st  ac  rc   dmg  stam reach push level     limb     extend hitR cancel guard  type     hitY
+  jab:        [  5,  3,  9,   5.5,  5,  1.30, 1.2, 'light',  'handL', 0.16, 0.11, 0.30, 'high', 'strike', 1.52],
+  cross:      [  8,  4, 13,  10.0,  9,  1.45, 2.4, 'mid',    'handR', 0.18, 0.12, 0.26, 'high', 'strike', 1.52],
+  hook:       [ 10,  5, 17,  13.5, 12,  1.28, 3.0, 'heavy',  'handL', 0.20, 0.14, 0.22, 'high', 'strike', 1.46],
+  uppercut:   [ 13,  6, 21,  17.0, 16,  1.15, 3.6, 'launch', 'handR', 0.20, 0.15, 0.20, 'high', 'strike', 1.40],
+  kick:       [ 12,  6, 19,  14.0, 14,  1.70, 3.2, 'mid',    'footR', 0.24, 0.15, 0.18, 'low',  'strike', 1.05],
 
   // Clinch tools. Reached through G, not through the attack buttons.
-  knee:       [  7,  4, 11,   9.0,  8,  0.95, 1.0, 'mid',    'footL', 0.14, 0.13, 0.24, 'mid',  'grapple'],
-  toss:       [ 11,  5, 26,  12.0, 20,  1.00, 6.4, 'slam',   'handR', 0.16, 0.18, 0.00, 'mid',  'grapple'],
+  knee:       [  7,  4, 11,   9.0,  8,  0.95, 1.0, 'mid',    'footL', 0.14, 0.13, 0.24, 'mid',  'grapple', 1.05],
+  toss:       [ 11,  5, 26,  12.0, 20,  1.00, 6.4, 'slam',   'handR', 0.16, 0.18, 0.00, 'mid',  'grapple', 1.15],
 
   // Prop movesets. A weapon in hand trades speed for reach and damage, and the
   // prop itself is consumed by the heavy ones.
-  glassJab:   [  5,  3, 10,   7.0,  5,  1.34, 1.3, 'light',  'handR', 0.18, 0.11, 0.28, 'high', 'prop'],
-  glassSmash: [  9,  4, 18,  13.0, 10,  1.36, 2.2, 'heavy',  'handR', 0.20, 0.14, 0.20, 'high', 'prop'],
-  bottleJab:  [  6,  3, 11,   8.0,  6,  1.48, 1.6, 'light',  'handR', 0.26, 0.12, 0.28, 'high', 'prop'],
-  bottleSwing:[ 10,  5, 16,  15.0, 11,  1.52, 3.0, 'heavy',  'handR', 0.28, 0.15, 0.22, 'high', 'prop'],
-  bottleSmash:[ 14,  6, 24,  21.0, 15,  1.46, 4.0, 'launch', 'handR', 0.28, 0.17, 0.16, 'high', 'prop'],
-  stoolSwing: [ 15,  7, 25,  22.0, 19,  1.78, 5.2, 'heavy',  'handR', 0.42, 0.20, 0.14, 'mid',  'prop'],
-  stoolSlam:  [ 20,  8, 33,  28.0, 26,  1.62, 6.0, 'slam',   'handR', 0.40, 0.22, 0.00, 'high', 'prop'],
+  glassJab:   [  5,  3, 10,   7.0,  5,  1.34, 1.3, 'light',  'handR', 0.18, 0.11, 0.28, 'high', 'prop', 1.50],
+  glassSmash: [  9,  4, 18,  13.0, 10,  1.36, 2.2, 'heavy',  'handR', 0.20, 0.14, 0.20, 'high', 'prop', 1.46],
+  bottleJab:  [  6,  3, 11,   8.0,  6,  1.48, 1.6, 'light',  'handR', 0.26, 0.12, 0.28, 'high', 'prop', 1.50],
+  bottleSwing:[ 10,  5, 16,  15.0, 11,  1.52, 3.0, 'heavy',  'handR', 0.28, 0.15, 0.22, 'high', 'prop', 1.46],
+  bottleSmash:[ 14,  6, 24,  21.0, 15,  1.46, 4.0, 'launch', 'handR', 0.28, 0.17, 0.16, 'high', 'prop', 1.50],
+  stoolSwing: [ 15,  7, 25,  22.0, 19,  1.78, 5.2, 'heavy',  'handR', 0.42, 0.20, 0.14, 'mid',  'prop', 1.36],
+  stoolSlam:  [ 20,  8, 33,  28.0, 26,  1.62, 6.0, 'slam',   'handR', 0.40, 0.22, 0.00, 'high', 'prop', 1.58],
   // Throws. 'active' is the release frame, the damage number is what the prop
   // does when it connects downrange.
-  glassThrow: [  8,  2, 14,   9.0,  6,  9.00, 2.0, 'light',  'handR', 0.10, 0.09, 0.00, 'high', 'throw'],
-  bottleThrow:[  9,  2, 16,  13.0,  7, 11.00, 2.6, 'mid',    'handR', 0.10, 0.10, 0.00, 'high', 'throw'],
-  stoolThrow: [ 14,  3, 24,  19.0, 12,  9.00, 4.0, 'heavy',  'handR', 0.12, 0.12, 0.00, 'mid',  'throw'],
+  glassThrow: [  8,  2, 14,   9.0,  6,  9.00, 2.0, 'light',  'handR', 0.10, 0.09, 0.00, 'high', 'throw', 1.35],
+  bottleThrow:[  9,  2, 16,  13.0,  7, 11.00, 2.6, 'mid',    'handR', 0.10, 0.10, 0.00, 'high', 'throw', 1.35],
+  stoolThrow: [ 14,  3, 24,  19.0, 12,  9.00, 4.0, 'heavy',  'handR', 0.12, 0.12, 0.00, 'mid',  'throw', 1.35],
 
   // Borrachera beats. Scripted, so startup is short and they never whiff for
   // spacing reasons, only because the target is already on the floor.
-  borraRush:  [  6,  6, 10,   9.0,  0,  2.10, 2.0, 'mid',    'handL', 0.24, 0.20, 0.40, 'high', 'super'],
-  borraSmack: [  5,  5,  9,  11.0,  0,  1.90, 2.6, 'heavy',  'handR', 0.24, 0.20, 0.40, 'high', 'super'],
-  borraHead:  [  7,  6, 12,  14.0,  0,  1.60, 3.4, 'heavy',  'head',  0.18, 0.22, 0.40, 'high', 'super'],
-  borraSpin:  [  6,  8, 12,  12.0,  0,  2.00, 3.0, 'heavy',  'footR', 0.30, 0.24, 0.40, 'low',  'super'],
-  borraFinish:[ 10,  8, 30,  26.0,  0,  2.00, 8.0, 'slam',   'handR', 0.30, 0.26, 0.00, 'high', 'super']
+  borraRush:  [  6,  6, 10,   9.0,  0,  2.10, 2.0, 'mid',    'handL', 0.24, 0.20, 0.40, 'high', 'super', 1.50],
+  borraSmack: [  5,  5,  9,  11.0,  0,  1.90, 2.6, 'heavy',  'handR', 0.24, 0.20, 0.40, 'high', 'super', 1.50],
+  borraHead:  [  7,  6, 12,  14.0,  0,  1.60, 3.4, 'heavy',  'head',  0.18, 0.22, 0.40, 'high', 'super', 1.56],
+  borraSpin:  [  6,  8, 12,  12.0,  0,  2.00, 3.0, 'heavy',  'footR', 0.30, 0.24, 0.40, 'low',  'super', 1.02],
+  borraFinish:[ 10,  8, 30,  26.0,  0,  2.00, 8.0, 'slam',   'handR', 0.30, 0.26, 0.00, 'high', 'super', 1.50]
 };
 
 function build() {
@@ -71,6 +73,10 @@ function build() {
       cancel: r[11],
       guard: r[12],
       type: r[13],
+      // Authored hitbox height in metres off the floor. The capsule runs from
+      // the limb bone to a point at this height, 'reach' metres ahead, which is
+      // how a body kick hits the body while the foot is down at ankle height.
+      hitY: r[14],
       // Kept for the old call sites that read cfg.part directly.
       part: r[12] === 'low' ? 'legs' : r[12] === 'mid' ? 'body' : 'head'
     };
@@ -126,6 +132,9 @@ export function buzzTier(buzz) {
 // Everything the combat modules tune against. Lives here rather than in
 // core/config.js because combat owns these files and nothing else reads them.
 export const TUNE = {
+  // Hitboxes
+  reachScale: 0.78,        // authored point sits this far along 'reach'
+
   // Chains
   chainWindow: 0.28,        // matches input.bufferWindow, the buffer is the window
   chainTimeout: 0.85,       // a chain that goes quiet resets
@@ -188,7 +197,8 @@ export const TUNE = {
   propHype: 6,
 
   // Borrachera
-  borracheraCost: 100
+  borracheraCost: 100,
+  borracheraFloor: 0.96   // the top of the meter counts as full, see borrachera.js
 };
 
 // Hitbox and hurtbox geometry. Radii are metres, zones name what was struck.

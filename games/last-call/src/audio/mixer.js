@@ -187,7 +187,7 @@ export class Mixer {
     this._makeBus('music', cfg.music ?? 0.5, { rev: 0.06, slap: 0.0 });
     this._makeBus('sfx', cfg.sfx ?? 0.9, { rev: 0.24, slap: 0.16 });
     this._makeBus('crowd', cfg.crowd ?? 0.55, { rev: 0.38, slap: 0.1 });
-    this._makeBus('voice', (cfg.voice ?? 0.8), { rev: 0.3, slap: 0.22 });
+    this._makeBus('voice', (cfg.voice ?? 0.95), { rev: 0.3, slap: 0.22 });
 
     // Music alone runs through the duck and pump chain.
     this.buses.music.disconnect(this.preMaster);

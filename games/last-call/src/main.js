@@ -86,12 +86,32 @@ canvas.addEventListener('click', () => input.requestLock(canvas));
 
 input.attach();
 
+// The simulation runs on a fixed timestep. This is not a nicety: the
+// procedural animation is built on springs, and a spring integrated at the
+// clock's 0.1 second ceiling has a growth factor above one, so it diverges
+// exponentially and throws the fighters out of the room. Stepping at a fixed
+// 60 Hz makes the whole game framerate independent, which is also what any
+// deterministic replay would need.
+const FIXED_DT = 1 / 60;
+const MAX_STEPS = 4;          // beyond this, drop the backlog rather than spiral
+let accumulator = 0;
+
 function frame(nowMs) {
   requestAnimationFrame(frame);
   const dt = time.tick(nowMs);
   input.update(time.rawDt);
-  match.update(dt);
-  vfx.update(dt, camera.position);
+
+  accumulator += dt;
+  let steps = 0;
+  while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
+    match.update(FIXED_DT);
+    accumulator -= FIXED_DT;
+    steps++;
+  }
+  if (steps === MAX_STEPS) accumulator = 0;
+  // Effects are presentation, not simulation, so they take the wall time that
+  // was actually consumed and never run more than once per displayed frame.
+  vfx.update(Math.min(dt, MAX_STEPS * FIXED_DT), camera.position);
   post.params.drunk = match.player.drunk01 * 0.85;
   post.params.focusDistance = match.focusDistance;
   renderer.info.reset();

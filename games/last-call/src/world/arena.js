@@ -523,6 +523,12 @@ export class Arena {
 
   // --------------------------------------------------------------- frame ---
 
+  // The match hands the arena the point the fight is at, so the follow spot
+  // and the back light can track it.
+  setFocus(v) {
+    this.lighting?.setFocus?.(v.x, 1.0, v.z);
+  }
+
   update(dt, t = 0) {
     this.beat += dt * BEATS_PER_SEC;
     // A sharp attack and a slow tail: this is the shape of a kick drum, and

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+
+const _focus = new THREE.Vector3();
 import { Fighter } from '../combat/fighter.js';
 import { Brain } from '../ai/brain.js';
 import { Arena } from '../world/arena.js';
@@ -51,6 +53,9 @@ export class Match {
   }
 
   update(dt) {
+    // Light the fight, not the middle of the room.
+    _focus.copy(this.player.position).lerp(this.cpu.position, 0.5);
+    this.arena.setFocus(_focus);
     this.arena.update(dt, time.elapsed);
     this.tpcam.drunk = this.player.drunk01;
 

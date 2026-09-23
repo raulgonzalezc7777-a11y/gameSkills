@@ -33,7 +33,17 @@ export const IK_BONE = [BI.handL, BI.handR, BI.footL, BI.footR];
 
 export const createPose = () => new Float32Array(POSE_SIZE);
 
-export function zeroPose(p) { p.fill(0); }
+// Euler order per bone. A bone's own axis has to be the twist, applied first,
+// or the two swing channels stop meaning anything the moment the limb leaves
+// the rest pose. Arms run along local X, legs down local -Y, and the spine
+// chain is upright where the default order already behaves.
+export const BONE_ORDER = BONES.map((n) => (
+  /^(shoulder|upperArm|forearm|hand)/.test(n) ? 'YZX'
+  : /^(thigh|shin|foot)/.test(n) ? 'XZY'
+  : 'XYZ'
+));
+
+export function zeroPose(p) { p.fill(0); return p; }
 export function copyPose(dst, src) { dst.set(src); }
 
 export function lerpPose(out, a, b, t) {

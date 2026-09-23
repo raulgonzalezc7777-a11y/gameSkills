@@ -143,7 +143,7 @@ export function paintTattoos(ctx, size, rects, rng, style = 'sleeve') {
     // Tribal bands wrapping the upper arm. The arm loft runs its v axis along
     // the limb, so a horizontal stroke here is a band around it.
     for (let b = 0; b < 4; b++) {
-      const y = arm.y + arm.h * (0.10 + b * 0.085);
+      const y = arm.y + arm.h * (0.60 + b * 0.085);
       const amp = arm.h * (0.018 + rng.range(0, 0.014));
       ctx.lineWidth = arm.h * rng.range(0.012, 0.030);
       ctx.beginPath();
@@ -158,10 +158,10 @@ export function paintTattoos(ctx, size, rects, rng, style = 'sleeve') {
     // Barbed spikes hanging off the lowest band.
     for (let i = 0; i < 12; i++) {
       const x = arm.x + arm.w * (i / 12 + 0.02);
-      const y = arm.y + arm.h * 0.44;
+      const y = arm.y + arm.h * 0.94;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x + arm.w * 0.035, y + arm.h * rng.range(0.03, 0.075));
+      ctx.lineTo(x + arm.w * 0.035, y - arm.h * rng.range(0.03, 0.075));
       ctx.lineTo(x + arm.w * 0.07, y);
       ctx.closePath();
       ctx.fill();
@@ -173,7 +173,7 @@ export function paintTattoos(ctx, size, rects, rng, style = 'sleeve') {
     // The torso loft puts the chest a little over halfway up its rect and the
     // front centreline at the middle of its u range.
     const cx = body.x + body.w * 0.5;
-    const cy = body.y + body.h * 0.60;
+    const cy = body.y + body.h * 0.40;
     ctx.lineWidth = body.w * 0.012;
     for (let w = 0; w < 2; w++) {
       const s = w ? 1 : -1;
@@ -206,7 +206,7 @@ const ALIAS = {
 
 // Which atlas rects a logical part paints into.
 const PART_RECTS = {
-  face: ['body'],
+  face: ['head'],
   torso: ['body'],
   arms: ['armL', 'armR'],
   legs: ['legL', 'legR']

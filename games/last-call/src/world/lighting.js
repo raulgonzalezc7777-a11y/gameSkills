@@ -266,6 +266,30 @@ export class Lighting {
       this.neonLights.push({ light: pl, base: 70, phase: rng.range(0, TAU) });
     }
 
+    // Follow spot. The truss key lights the room; this one lights the fight,
+    // and it tracks. Without it a fighter who steps off the centre mark
+    // becomes a dark cutout against a very bright floor.
+    const follow = new THREE.SpotLight(0xffffff, 540, 22, 0.54, 0.7, 1.35);
+    follow.position.set(0, room.h - 0.3, 2.2);
+    follow.target.position.set(0, 1.0, 0);
+    follow.castShadow = true;
+    follow.shadow.mapSize.set(CFG.render.shadowMapSize, CFG.render.shadowMapSize);
+    follow.shadow.camera.near = 1.0;
+    follow.shadow.camera.far = 20;
+    follow.shadow.bias = -0.0005;
+    follow.shadow.normalBias = 0.02;
+    follow.shadow.radius = 2.0;
+    G.add(follow, follow.target);
+    this.follow = follow;
+
+    // A cool back light opposite the follow, so the silhouette separates from
+    // the floor instead of merging into it.
+    const back = new THREE.SpotLight(0x9fd4ff, 300, 20, 0.7, 0.8, 1.4);
+    back.position.set(-1.2, 3.6, -4.4);
+    back.target.position.set(0, 1.2, 0);
+    G.add(back, back.target);
+    this.backLight = back;
+
     this._buildHaze(room);
     this._buildDust(room, quality);
   }
@@ -343,8 +367,18 @@ export class Lighting {
 
   // 'pulse' is the sharp on-beat spike, 'energy' the slow-moving excitement of
   // the match, both supplied by the arena so every system agrees on the music.
+  // Called by the arena each frame with the point the fight is happening at.
+  setFocus(x, y, z) {
+    this.follow.target.position.set(x, y, z);
+    this.follow.position.set(x * 0.35, this.room.h - 0.3, z * 0.35 + 2.2);
+    this.backLight.target.position.set(x, y + 0.2, z);
+    this.backLight.position.set(x * 0.4 - 1.2, 3.6, z * 0.4 - 4.4);
+  }
+
   update(dt, t, beat, pulse, energy) {
     const hype = clamp01(energy);
+    this.follow.intensity = 540 * (0.88 + pulse * 0.2) + hype * 70;
+    this.backLight.intensity = 300 * (0.8 + pulse * 0.3);
 
     this.key.intensity = 210 * (0.82 + pulse * 0.34) + hype * 40;
     for (let i = 0; i < this.rims.length; i++) {

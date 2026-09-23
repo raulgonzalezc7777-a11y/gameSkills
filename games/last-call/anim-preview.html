@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>LAST CALL - animation preview</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0b10; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; left: 22px; top: 18px; color: #f2f4ff;
+    font: 600 15px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
+    text-shadow: 0 2px 10px #000; pointer-events: none; letter-spacing: 0.03em;
+  }
+  #hud b { color: #ffd166; font-size: 21px; letter-spacing: 0.06em; }
+  #hud .dim { color: #8b93b0; }
+  #bars { position: fixed; left: 22px; bottom: 20px; width: 260px; }
+  .bar { height: 7px; background: #1b1e2b; margin: 7px 0 2px; border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: #ff6b4a; }
+  .lbl { color: #8b93b0; font: 600 11px ui-monospace, monospace; letter-spacing: 0.12em; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div id="hud">
+  <b id="state">IDLE</b><br />
+  <span id="seg" class="dim">segment</span><br />
+  <span id="info" class="dim">t 0.0s</span>
+</div>
+<div id="bars">
+  <div class="lbl">BUZZ</div><div class="bar"><i id="bDrunk" style="width:0%"></i></div>
+  <div class="lbl">SPEED</div><div class="bar"><i id="bSpeed" style="width:0%;background:#4ad2ff"></i></div>
+  <div class="lbl">HEALTH</div><div class="bar"><i id="bHealth" style="width:100%;background:#7ee081"></i></div>
+</div>
+<script type="module" src="./src/anim/preview.js"></script>
+</body>
+</html>
