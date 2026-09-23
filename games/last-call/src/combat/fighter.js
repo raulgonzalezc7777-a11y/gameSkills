@@ -263,6 +263,25 @@ export class Fighter {
     if (this.prop && this.propSys) this.propSys.drop(this);
   }
 
+  // Scripted knockdown and knockout, for the capture harness and any future
+  // replay or tutorial. The old takeHit() entry point was removed when combat
+  // moved to swept hitboxes, and the shot list kept calling it: its money
+  // shots silently threw and photographed two fighters standing up.
+  forceDown(kind = 'knockdown', by = null) {
+    if (kind === 'ko') {
+      this.health = 0;
+      this.dead = true;
+      this.goDown(4.5, 'ko');
+      bus.emit(EV.KO, { fighter: this, by });
+      bus.emit(EV.SLOWMO, { duration: 1.9, scale: 0.22 });
+      bus.emit(EV.CAMERA_SHAKE, 1.4);
+    } else {
+      this.goDown(2.1, 'knockdown');
+      bus.emit(EV.KNOCKDOWN, { fighter: this, by });
+      bus.emit(EV.CAMERA_SHAKE, 1.1);
+    }
+  }
+
   // The director resets health between rounds but knows nothing about guard,
   // chains or what is in your hand, so the fighter notices the new round.
   resetForRound() {

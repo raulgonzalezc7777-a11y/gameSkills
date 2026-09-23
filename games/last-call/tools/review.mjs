@@ -28,7 +28,9 @@ const sh = (cmd, args, env = {}) => {
 
 console.log(`capturing ${run} at ${W}x${H}, quality=${quality}`);
 const log = sh('node', ['tools/shotlist.mjs', shotDir, run, W, H], { PORT: port, QUALITY: quality });
-const errCount = (log.match(/\[pageerror\]/g) || []).length;
+// Page errors, failed beat setups and console errors all count. The first
+// version matched a prefix the shot list never wrote, so it always said zero.
+const errCount = (log.match(/\[(pageerror|setup [^\]]*|console)\]/g) || []).length;
 console.log(log.split('--- ERRORS')[1] ? '--- ERRORS' + log.split('--- ERRORS')[1].slice(0, 900) : '(no error section)');
 
 const shots = existsSync(shotDir) ? readdirSync(shotDir).filter((f) => f.endsWith('.png')).sort() : [];

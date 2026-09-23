@@ -28,7 +28,7 @@ const BEATS = [
       g.match.tpcam.override={dist:4.0,pitch:0.08,fov:50};})()`,
     note: 'Maximum drunkenness: the signature post FX and the sway.' },
   { id: '05-knockdown', frames: 2, freezeAfter: true,
-    setup: `(()=>{const g=window.__game,m=g.match;m.cpu.takeHit(m.player,{dmg:34,push:5,reach:2,part:'head',stam:0},'head');})()`,
+    setup: `(()=>{const g=window.__game,m=g.match;m.cpu.forceDown('knockdown', m.player);})()`,
     note: 'Knockdown: ragdoll, slow motion, crowd reaction.' },
   { id: '06-venue-wide', frames: 6,
     setup: `(()=>{const g=window.__game;g.match.tpcam.override={dist:11.0,pitch:0.40,fov:56};})()`,
@@ -37,8 +37,7 @@ const BEATS = [
     setup: `(()=>{const g=window.__game;g.match.tpcam.override={dist:4.2,pitch:-0.26,fov:48};})()`,
     note: 'Low angle across the floor: reflections and contact shadows.' },
   { id: '08-ko-moment', frames: 2, freezeAfter: true,
-    setup: `(()=>{const g=window.__game,m=g.match;m.cpu.health=1;
-      m.cpu.takeHit(m.player,{dmg:50,push:7,reach:2,part:'head',stam:0},'head');
+    setup: `(()=>{const g=window.__game,m=g.match;m.cpu.forceDown('ko', m.player);
       g.match.tpcam.override={dist:3.4,pitch:0.02,fov:42};})()`,
     note: 'The knockout: the money shot.' }
 ];
@@ -52,7 +51,7 @@ const b = await chromium.launch({
 });
 const p = await b.newPage({ viewport: { width: W, height: H } });
 const errors = [];
-p.on('pageerror', (e) => errors.push(e.message));
+p.on('pageerror', (e) => errors.push('[pageerror] ' + e.message));
 p.on('console', (m) => { if (m.type() === 'error') errors.push('[console] ' + m.text()); });
 
 const Q = process.env.QUALITY || 'high';
@@ -103,4 +102,5 @@ console.log([...new Set(errors)].slice(0, 25).join('\n'));
 console.log('\n--- MANIFEST ---');
 console.log(JSON.stringify(manifest, null, 2));
 await b.close();
-process.exit(errors.length ? 0 : 0);
+// A capture with errors is not a capture: fail loudly so nobody reviews it.
+process.exit(errors.length ? 1 : 0);
