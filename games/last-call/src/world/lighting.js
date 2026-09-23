@@ -170,7 +170,7 @@ export class Lighting {
     this.hemi = hemi;
 
     // Key: the one shadowing light. Hung off the truss, aimed at the fight.
-    const key = new THREE.SpotLight(0xfff0dc, 210, 26, 0.46, 0.62, 1.55);
+    const key = new THREE.SpotLight(0xfff0dc, 120, 26, 0.46, 0.62, 1.55);
     key.position.set(0.6, room.h - 0.55, 1.4);
     key.target.position.set(0, 1.05, 0);
     key.castShadow = true;
@@ -185,12 +185,12 @@ export class Lighting {
 
     // Rims from opposite sides in the palette the HUD already uses. These are
     // what separate a sweaty fighter from a black room.
-    const rimA = new THREE.SpotLight(PINK, 320, 30, 0.95, 0.85, 1.4);
+    const rimA = new THREE.SpotLight(PINK, 165, 30, 0.95, 0.85, 1.4);
     rimA.position.set(-3.4, 3.9, -room.hz + 1.2);
     rimA.target.position.set(0.5, 1.1, 1.0);
     G.add(rimA, rimA.target);
 
-    const rimB = new THREE.SpotLight(CYAN, 320, 30, 0.95, 0.85, 1.4);
+    const rimB = new THREE.SpotLight(CYAN, 165, 30, 0.95, 0.85, 1.4);
     rimB.position.set(3.4, 3.9, room.hz - 1.2);
     rimB.target.position.set(-0.5, 1.1, -1.0);
     G.add(rimB, rimB.target);
@@ -202,8 +202,8 @@ export class Lighting {
     fill.target.position.set(0, 0.9, 0);
     G.add(fill, fill.target);
     this.rims = [
-      { light: rimA, base: 320, phase: 0.0 },
-      { light: rimB, base: 320, phase: 0.5 },
+      { light: rimA, base: 165, phase: 0.0 },
+      { light: rimB, base: 165, phase: 0.5 },
       { light: fill, base: 70, phase: 0.25 }
     ];
 
@@ -269,7 +269,7 @@ export class Lighting {
     // Follow spot. The truss key lights the room; this one lights the fight,
     // and it tracks. Without it a fighter who steps off the centre mark
     // becomes a dark cutout against a very bright floor.
-    const follow = new THREE.SpotLight(0xfff4e6, 185, 22, 0.58, 0.72, 1.35);
+    const follow = new THREE.SpotLight(0xfff4e6, 105, 22, 0.58, 0.72, 1.35);
     follow.position.set(0, room.h - 0.3, 2.2);
     follow.target.position.set(0, 1.0, 0);
     follow.castShadow = true;
@@ -284,7 +284,7 @@ export class Lighting {
 
     // A cool back light opposite the follow, so the silhouette separates from
     // the floor instead of merging into it.
-    const back = new THREE.SpotLight(0x8fc6ff, 170, 20, 0.72, 0.8, 1.4);
+    const back = new THREE.SpotLight(0x8fc6ff, 120, 20, 0.72, 0.8, 1.4);
     back.position.set(-1.2, 3.6, -4.4);
     back.target.position.set(0, 1.2, 0);
     G.add(back, back.target);
@@ -377,10 +377,10 @@ export class Lighting {
 
   update(dt, t, beat, pulse, energy) {
     const hype = clamp01(energy);
-    this.follow.intensity = 185 * (0.88 + pulse * 0.2) + hype * 30;
-    this.backLight.intensity = 170 * (0.8 + pulse * 0.3);
+    this.follow.intensity = 105 * (0.88 + pulse * 0.2) + hype * 20;
+    this.backLight.intensity = 120 * (0.8 + pulse * 0.3);
 
-    this.key.intensity = 210 * (0.82 + pulse * 0.34) + hype * 40;
+    this.key.intensity = 120 * (0.82 + pulse * 0.34) + hype * 24;
     for (let i = 0; i < this.rims.length; i++) {
       const r = this.rims[i];
       const s = Math.sin((beat + r.phase) * Math.PI);

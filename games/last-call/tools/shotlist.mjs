@@ -16,7 +16,7 @@ const BEATS = [
   { id: '01-wide-stance', frames: 10, setup: `(()=>{window.__game.match.tpcam.override=null;})()`,
     note: 'Neutral stance at fighting distance. The establishing shot.' },
   { id: '02-closeup-face', frames: 6,
-    setup: `(()=>{const g=window.__game; g.match.tpcam.override={dist:1.9,pitch:0.06,fov:38};})()`,
+    setup: `(()=>{const g=window.__game; g.match.tpcam.override={dist:3.0,pitch:0.03,fov:32};})()`,
     note: 'Camera pushed in on the fighters: material and face detail.' },
   { id: '03-impact', frames: 3,
     setup: `(()=>{const g=window.__game,m=g.match;g.match.tpcam.override={dist:3.0,pitch:0.05,fov:44};
