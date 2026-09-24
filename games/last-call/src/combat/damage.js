@@ -187,7 +187,7 @@ function clean(attacker, target, move, hurt, dmg, counter, ctx) {
   if (target.parts.head <= 0 || target.parts.legs <= 0 || rng.chance(clamp01(p))) {
     target.parts.head = Math.max(10, target.parts.head);
     target.parts.legs = Math.max(10, target.parts.legs);
-    target.goDown(2.1, 'knockdown');
+    target.goDown(1.5, 'knockdown');
     bus.emit(EV.KNOCKDOWN, { fighter: target, by: attacker });
     bus.emit(EV.CAMERA_SHAKE, 1.1);
     return 'knockdown';

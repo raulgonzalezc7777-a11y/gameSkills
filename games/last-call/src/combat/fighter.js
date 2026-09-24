@@ -296,7 +296,7 @@ export class Fighter {
       bus.emit(EV.SLOWMO, { duration: 1.9, scale: 0.22 });
       bus.emit(EV.CAMERA_SHAKE, 1.4);
     } else {
-      this.goDown(2.1, 'knockdown');
+      this.goDown(1.5, 'knockdown');
       bus.emit(EV.KNOCKDOWN, { fighter: this, by });
       bus.emit(EV.CAMERA_SHAKE, 1.1);
     }
@@ -480,7 +480,7 @@ export class Fighter {
     bus.emit(EV.HIT_WHIFF, { fighter: this });
     // Legless fighters fall over on a whiff, exactly as advertised.
     if (tier.whiffFall > 0 && rng.chance(tier.whiffFall)) {
-      this.goDown(1.5, 'whiffFall');
+      this.goDown(1.1, 'whiffFall');
       bus.emit(EV.STUMBLE, { fighter: this, grace: false, fell: true });
       bus.emit(EV.KNOCKDOWN, { fighter: this, by: null, self: true });
     }
@@ -490,14 +490,17 @@ export class Fighter {
     const D = CFG.fighter;
     let mx = locked ? 0 : (I.moveX || 0);
     let my = locked ? 0 : (I.moveY || 0);
-    if (this.attacking) { mx *= 0.15; my *= 0.15; }
-    if (this.blocking) { mx *= 0.5; my *= 0.5; }
+    // You can still step while you swing or cover: a fighter that freezes
+    // on every button press feels like it is wading through glue.
+    if (this.attacking) { mx *= 0.4; my *= 0.4; }
+    if (this.blocking) { mx *= 0.65; my *= 0.65; }
 
-    // Drunk feet do not go exactly where they are sent.
+    // Drunk feet do not go exactly where they are sent, but they do go: the
+    // drift is a nudge on top of the stick, and the ragdoll sells the rest.
     if (!locked && tier.balance < 1) {
       const wob = (1 - tier.balance) * lm.swayMul;
-      mx += Math.sin(this.clock * 1.7 + this._phase) * 0.34 * wob;
-      my += Math.sin(this.clock * 1.13 + this._phase * 2) * 0.24 * wob;
+      mx += Math.sin(this.clock * 1.7 + this._phase) * 0.16 * wob;
+      my += Math.sin(this.clock * 1.13 + this._phase * 2) * 0.12 * wob;
     }
 
     const sprint = I.sprint && this.stamina > 12 && !this.blocking && !locked;
@@ -508,14 +511,15 @@ export class Fighter {
     const wantVz = (fz * my * (my < 0 ? D.backMul : 1) + rz * mx * D.strafeMul) * base;
 
     // Delayed footing: the drunker you are, the slower the feet answer.
-    const lambda = 12 * (0.45 + 0.55 * tier.balance);
+    const lambda = 18 * (0.7 + 0.3 * tier.balance);
     this.velocity.x = expDamp(this.velocity.x, wantVx, lambda, dt);
     this.velocity.z = expDamp(this.velocity.z, wantVz, lambda, dt);
     if (sprint) this.stamina = Math.max(0, this.stamina - 11 * dt);
 
     this.position.x += this.velocity.x * dt;
     this.position.z += this.velocity.z * dt;
-    this.velocity.multiplyScalar(Math.exp(-2.2 * dt));
+    // Friction bleeds off shoves and slides, but never fights a held stick.
+    if (Math.abs(mx) + Math.abs(my) < 0.2) this.velocity.multiplyScalar(Math.exp(-2.2 * dt));
     if (this.shoveHold > 0) {
       this.shoveHold -= dt;
     } else {

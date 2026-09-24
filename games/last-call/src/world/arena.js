@@ -13,6 +13,7 @@ import { clamp01, TAU } from '../core/math.js';
 // running around it, so every element points inward at the centre.
 const ROOM = { hx: 9.6, hz: 7.4, h: 4.7 };
 const FLOOR_R = 5.7;          // the lit dance floor, which is also the fight area
+const ROPE_R = FLOOR_R + 0.22; // the ropes: nothing in the fight gets past them
 const BEATS_PER_SEC = 126 / 60;
 
 const PINK = 0xff2a6d, CYAN = 0x05d9e8, GOLD = 0xf9c80e, VIOLET = 0x9d4edd;
@@ -179,7 +180,38 @@ export class Arena {
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.045;
     this.group.add(ring);
+
+    // Ropes. The fight is a ring now: a body that is sent flying hits these
+    // and bounces back into the fight instead of landing in the crowd, and
+    // the player can see exactly where that wall is. Two glowing ropes on
+    // short padded posts, low enough that the camera looks over them.
+    const R = ROPE_R;
+    const postGeo = new THREE.CylinderGeometry(0.05, 0.06, 1.2, 10);
+    const padGeo = new THREE.CylinderGeometry(0.085, 0.085, 0.22, 12);
+    const padMat = new THREE.MeshStandardMaterial({ color: 0x1a0710, emissive: PINK, emissiveIntensity: 0.5, roughness: 0.5 });
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TAU + TAU / 16;
+      const post = new THREE.Mesh(postGeo, MAT.chrome());
+      post.position.set(Math.cos(a) * R, 0.6, Math.sin(a) * R);
+      post.castShadow = true;
+      const pad = new THREE.Mesh(padGeo, padMat);
+      pad.position.set(post.position.x, 1.12, post.position.z);
+      this.group.add(post, pad);
+    }
+    this.ropeMats = [];
+    [[0.62, PINK], [1.06, CYAN]].forEach(([y, c]) => {
+      const m = new THREE.MeshStandardMaterial({ color: 0x0b0b10, emissive: c, emissiveIntensity: 2.4, roughness: 0.35 });
+      const rope = new THREE.Mesh(new THREE.TorusGeometry(R, 0.028, 8, 120), m);
+      rope.rotation.x = Math.PI / 2;
+      rope.position.y = y;
+      this.group.add(rope);
+      this.ropeMats.push(m);
+    });
+    this.ropeRadius = R;
   }
+
+  // A body hit the ropes: they flash, which sells the bounce.
+  flashRopes(power = 1) { this._ropeFlash = Math.min(1.5, (this._ropeFlash || 0) + power); }
 
   _buildBar() {
     const { hx, hz, h } = ROOM;
@@ -505,7 +537,7 @@ export class Arena {
       const x = rng.range(-hx + 0.7, hx - 0.7);
       const z = rng.range(-hz + 0.7, hz - 0.7);
       const d = Math.hypot(x, z);
-      if (d < FLOOR_R + 0.5) continue;                 // never inside the fight
+      if (d < ROPE_R + 0.7) continue;                  // never inside the fight
       if (x < -hx + 2.3 && Math.abs(z) < hz * 0.8) continue;  // not inside the bar
       if (z < -hz + 1.9 && x > 0.4) continue;          // not on the DJ booth
       slots.push({ x, z, y: 0, face: Math.atan2(-x, -z) + rng.gauss(0, 0.3) });
@@ -513,7 +545,7 @@ export class Arena {
     // Front row presses right up against the brass ring.
     for (let i = 0; i < Math.min(34, slots.length); i++) {
       const a = (i / 34) * TAU + rng.gauss(0, 0.05);
-      const r = FLOOR_R + rng.range(0.55, 1.0);
+      const r = ROPE_R + rng.range(0.6, 1.0);
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
       if (Math.abs(x) > hx - 0.6 || Math.abs(z) > hz - 0.6) continue;
       slots[i] = { x, z, y: 0, face: Math.atan2(-x, -z) + rng.gauss(0, 0.16) };
@@ -534,6 +566,10 @@ export class Arena {
     // A sharp attack and a slow tail: this is the shape of a kick drum, and
     // every light in the room is driven from it.
     this.pulse = Math.pow(Math.max(0, Math.sin(this.beat * Math.PI)), 7);
+    if (this.ropeMats) {
+      this._ropeFlash = Math.max(0, (this._ropeFlash || 0) - dt * 3);
+      for (const m of this.ropeMats) m.emissiveIntensity = 2.4 + this.pulse * 0.8 + this._ropeFlash * 6;
+    }
     this.energy = Math.max(0.22, this.energy - dt * 0.35);
 
     if (this.ledMat) {

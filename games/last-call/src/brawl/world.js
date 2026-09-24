@@ -30,16 +30,19 @@ export class BrawlWorld {
     floor.position.set(0, floorY, 0);
     w.addBody(floor);
 
-    // The ring: the crowd shoves you back in. Twenty-eight tall boxes on a
-    // circle just outside the lit floor, with a lot of bounce, so a knockout
-    // blow sends a body into the punters and it comes back like a pinball.
-    const R = (arena?.radius ?? 5.7) + 0.55;
-    const N = 28;
+    // The ropes. A thick wall of boxes whose inner faces sit on the rope
+    // line: thick, so a body launched at knockout speed cannot tunnel through
+    // between two steps, and tall, so nothing sails over. Bouncy, so a body
+    // that hits them comes back into the fight like a wrestler off the ropes.
+    this.matRope = new CANNON.Material('rope');
+    w.addContactMaterial(new CANNON.ContactMaterial(this.matBody, this.matRope, { friction: 0.2, restitution: 0.55 }));
+    const R = arena?.ropeRadius ?? ((arena?.radius ?? 5.7) + 0.22);
+    const N = 32, T = 0.6;
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2;
-      const b = new CANNON.Body({ mass: 0, material: this.matFloor, collisionFilterGroup: GROUP.WORLD, collisionFilterMask: -1 });
-      b.addShape(new CANNON.Box(new CANNON.Vec3(0.2, 1.6, (Math.PI * R) / N + 0.08)));
-      b.position.set(Math.cos(a) * (R + 0.2), floorY + 1.6, Math.sin(a) * (R + 0.2));
+      const b = new CANNON.Body({ mass: 0, material: this.matRope, collisionFilterGroup: GROUP.WORLD, collisionFilterMask: -1 });
+      b.addShape(new CANNON.Box(new CANNON.Vec3(T, 3, (Math.PI * (R + T)) / N + 0.1)));
+      b.position.set(Math.cos(a) * (R + T), floorY + 3, Math.sin(a) * (R + T));
       b.quaternion.setFromEuler(0, -a, 0);
       w.addBody(b);
     }
@@ -48,4 +51,19 @@ export class BrawlWorld {
   }
 
   step(dt) { this.world.step(dt); }
+
+  // The guarantee behind the wall: whatever the solver did this step, no
+  // body's centre ends up past the ropes. One that tried is put back on the
+  // rope line with its outward speed reflected, which reads as a bounce.
+  // Returns the hardest outward speed it caught, so the ropes can flash.
+  contain(body, margin) {
+    const p = body.position, lim = this.ringRadius - margin;
+    const r = Math.hypot(p.x, p.z);
+    if (r <= lim) return 0;
+    const nx = p.x / r, nz = p.z / r;
+    p.x = nx * lim; p.z = nz * lim;
+    const v = body.velocity, vr = v.x * nx + v.z * nz;
+    if (vr > 0) { v.x -= 1.5 * vr * nx; v.z -= 1.5 * vr * nz; }
+    return Math.max(0, vr);
+  }
 }

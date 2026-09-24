@@ -209,7 +209,7 @@ export const TUNE = {
   chipMul: 0.22,
 
   // Per-limb consequences, straight from the design doc
-  legsSpeedFloor: 0.55,
+  legsSpeedFloor: 0.75,
   legsSwayGain: 0.85,
   bodyStamFloor: 0.40,
   headFlashGain: 0.45,

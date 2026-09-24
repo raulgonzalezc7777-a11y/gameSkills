@@ -15,6 +15,7 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _dir = new THREE.Vecto
 export class Brawl {
   constructor(arena, fighters) {
     this.physics = new BrawlWorld(arena);
+    this.arena = arena;
     this.fighters = fighters;
     fighters.forEach((f, i) => {
       f.ragdoll = new ActiveRagdoll(f, this.physics, i === 0 ? GROUP.A : GROUP.B);
@@ -109,13 +110,14 @@ export class Brawl {
       r.preStep(dt, f.drunk01 ?? 0, BRAWL);
     }
     this.physics.step(dt);
+    this.containAll(dt);
     for (const f of this.fighters) {
       const r = f.ragdoll;
       if (!r?.built) continue;
       const ev = r.postStep(dt, f.drunk01 ?? 0, BRAWL);
       if (ev === 'fell' && !f.dead && !(f.downed > 0)) {
-        f.goDown?.(1.9, 'fell');
-        r.goLimp(1.9);
+        f.goDown?.(1.1, 'fell');
+        r.goLimp(1.1);
         bus.emit(EV.STUMBLE, { fighter: f, fell: true });
         bus.emit('brawl:fell', { fighter: f });
       } else if (ev === 'hiccup') {
@@ -128,6 +130,26 @@ export class Brawl {
       const l = this._later[i];
       if ((l.t -= dt) <= 0) { this._later.splice(i, 1); l.fn(); }
     }
+  }
+
+  // Nothing leaves the ring: every body is held inside the ropes, and a
+  // fighter who slams into them makes them flash and the crowd shout.
+  containAll(dt) {
+    const P = this.physics;
+    for (const f of this.fighters) {
+      const r = f.ragdoll;
+      if (!r?.built) continue;
+      let hit = 0;
+      for (const s of r.segs) hit = Math.max(hit, P.contain(s.body, 0.12));
+      r._ropeCd = Math.max(0, (r._ropeCd || 0) - dt);
+      if (hit > 3 && r._ropeCd <= 0) {
+        r._ropeCd = 1;
+        this.arena?.flashRopes?.(Math.min(1.5, hit / 6));
+        bus.emit('brawl:ropes', { fighter: f, speed: hit });
+        bus.emit(EV.SFX, { name: 'bodyfall', position: f.position, volume: Math.min(1, hit / 8) });
+      }
+    }
+    for (const it of this.debris.items) if (it.alive) P.contain(it.body, 0.3);
   }
 
   dispose() { this._offs.forEach((o) => o()); this.debris?.dispose(); this.fighters.forEach((f) => f.ragdoll?.dispose()); }

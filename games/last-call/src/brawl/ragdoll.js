@@ -39,6 +39,7 @@ const _d = new THREE.Vector3(), _e = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
 const _m = new THREE.Matrix4(), _s = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
+const _tv = new THREE.Vector3();
 const _cv = new CANNON.Vec3(), _cv2 = new CANNON.Vec3();
 const _cq = new CANNON.Quaternion();
 
@@ -303,13 +304,19 @@ export class ActiveRagdoll {
     // the head is left to its muscles, which is where the bobble comes from.
     // A spring sized to the whole body but applied to a 12 kg pelvis damps
     // six times too hard and oscillates itself apart.
+    const fv = this.f.velocity;
+    _tv.set(fv ? fv.x : 0, 0, fv ? fv.z : 0);
     if (s > 0.01) {
       for (const [seg, k] of [[this.pelvis, tuning.rootSpring], [this.byName.belly, tuning.rootSpring * 0.8], [this.chest, tuning.chestSpring]]) {
-        const b = seg.body, pt = seg.pt;
+        const b = seg.body, pt = seg.pt, tv = _tv;
+        // Damp against the target's own velocity, not against moving at all:
+        // damping the absolute velocity left a walking body trailing the
+        // animation by over half a metre, and the leash below then dragged
+        // the fighter back, which is what made walking feel like wading.
         const kp = k * s, kd = 2 * Math.sqrt(k) * 0.9 * Math.sqrt(s);
-        let fx = kp * (pt.x - b.position.x) - kd * b.velocity.x;
-        let fy = kp * (pt.y - b.position.y) - kd * b.velocity.y;
-        let fz = kp * (pt.z - b.position.z) - kd * b.velocity.z;
+        let fx = kp * (pt.x - b.position.x) - kd * (b.velocity.x - tv.x);
+        let fy = kp * (pt.y - b.position.y) - kd * (b.velocity.y - tv.y);
+        let fz = kp * (pt.z - b.position.z) - kd * (b.velocity.z - tv.z);
         const mag = Math.hypot(fx, fy, fz), cap = 90;
         if (mag > cap) { fx *= cap / mag; fy *= cap / mag; fz *= cap / mag; }
         b.force.x += b.mass * fx; b.force.y += b.mass * fy; b.force.z += b.mass * fz;
@@ -359,8 +366,8 @@ export class ActiveRagdoll {
       // the fighter landed and not where they were standing.
       root.x = p.x; root.z = p.z;
       if (this.f.velocity) this.f.velocity.set(0, 0, 0);
-    } else if (dist > 0.45) {
-      const k = (dist - 0.45) / dist;
+    } else if (dist > 0.7) {
+      const k = (dist - 0.7) / dist;
       root.x += dx * k; root.z += dz * k;
     }
 

@@ -31,10 +31,10 @@ export const CFG = {
     collisionRadius: 0.32
   },
   fighter: {
-    walkSpeed: 2.05,
-    runSpeed: 4.35,
-    strafeMul: 0.78,
-    backMul: 0.62,
+    walkSpeed: 3.3,
+    runSpeed: 5.4,
+    strafeMul: 0.95,
+    backMul: 0.85,
     turnRate: 9.5,
     mass: 82,
     height: 1.82,
@@ -65,8 +65,8 @@ export const BRAWL = {
   whiffSpin: 2.2, burpLean: 26,
   drunkWeakness: 0.62,     // share of muscle lost at full buzz
   looseLimbs: 0.55,        // arms and head run softer, so they swing and bobble
-  punchTense: 4.2,
-  punchPull: 420,          // how hard a live punch drags the fist at its target         // how hard the striking arm tenses for the punch
+  punchTense: 4.2,         // how hard the striking arm tenses for the punch
+  punchPull: 420,          // how hard a live punch drags the fist at its target
   staggerStrength: 0.22,   // muscle left while reeling from a clean hit
   wobble: 1.9,             // drunk sway torque
   rootSpring: 90,          // how hard the hips chase the animation
@@ -76,8 +76,8 @@ export const BRAWL = {
   hitImpulse: 11,         // impulse per point of damage on the part hit
   launchPerDamage: 0.42,   // whole-body velocity per point on heavy blows
   heavyHit: 9,            // damage above which a blow launches the body
-  knockdownLaunch: [7.5, 6.5],   // horizontal, vertical metres per second
-  koLaunch: [12, 9]
+  knockdownLaunch: [6, 5],   // horizontal, vertical metres per second
+  koLaunch: [8.5, 7]
 };
 
 export const QUALITY_PRESETS = {
