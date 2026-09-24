@@ -120,6 +120,15 @@ export class Clip {
       const keys = def.tracks[ch];
       this.tracks.push(compileTrack(channelIndex(ch), keys, this.duration, this.loop));
     }
+    // A relative clip is layered as its motion away from its own first key,
+    // not away from GUARD. The strikes were keyed from an older stance, and
+    // against GUARD their first frame already yanked the guard hand half a
+    // radian off the chin, so every punch flung the other arm out sideways.
+    this.rest = null;
+    if (def.relative) {
+      this.rest = createPose();
+      sampleClip(this, 0, this.rest);
+    }
   }
 }
 
@@ -358,10 +367,13 @@ def('strafeR', {
 // Durations match ATTACKS in combat/fighter.js (startup + active + recover) so
 // the pose lands on the frame the hitbox opens. Shape: a short coil against the
 // direction of travel, a snap to contact, a slow settle back to guard. The
-// ikw channels hand the wrist to the arm solver around contact so the punch
-// reaches the opponent instead of playing a fixed pose into thin air.
+// ikw channel is the strike's extension curve: held at zero through the
+// chamber, full on the active frames, back to zero over the recovery. The
+// solver aims the limb at the opponent only while it is up, so the coil and
+// the settle stay authored and the contact lands where the hit is decided.
 
 def('jab', {
+  relative: true,
   dur: 0.32,
   tracks: {
     'hips.y': [[0, 0.26], [0.035, 0.30], [0.09, 0.18, 'snap'], [0.16, 0.20], [0.32, 0.26, 'out']],
@@ -378,11 +390,12 @@ def('jab', {
     'thighL.x': [[0, -0.30], [0.09, -0.40, 'snap'], [0.32, -0.30, 'out']],
     'thighR.x': [[0, 0.20], [0.09, 0.30, 'snap'], [0.32, 0.20, 'out']],
     'hip.z': [[0, 0.0], [0.09, 0.055, 'snap'], [0.2, 0.03], [0.32, 0.0, 'out']],
-    'ikwHandL': [[0, 0, 'lin'], [0.06, 0.85, 'lin'], [0.17, 0.85, 'lin'], [0.24, 0, 'lin']]
+    'ikwHandL': [[0, 0, 'lin'], [0.03, 0, 'ease'], [0.085, 1, 'lin'], [0.15, 1, 'ease'], [0.26, 0, 'lin']]
   }
 });
 
 def('cross', {
+  relative: true,
   dur: 0.46,
   tracks: {
     'hips.y': [[0, 0.26], [0.05, 0.34, 'out'], [0.14, -0.20, 'snap'], [0.22, -0.18], [0.46, 0.26, 'out']],
@@ -405,11 +418,12 @@ def('cross', {
     'thighL.x': [[0, -0.30], [0.14, -0.44, 'snap'], [0.46, -0.30, 'out']],
     'hip.z': [[0, 0.0], [0.05, -0.02], [0.14, 0.085, 'snap'], [0.26, 0.05], [0.46, 0.0, 'out']],
     'hip.y': [[0, -0.085], [0.14, -0.11, 'snap'], [0.46, -0.085, 'out']],
-    'ikwHandR': [[0, 0, 'lin'], [0.1, 0.9, 'lin'], [0.24, 0.9, 'lin'], [0.32, 0, 'lin']]
+    'ikwHandR': [[0, 0, 'lin'], [0.05, 0, 'ease'], [0.135, 1, 'lin'], [0.22, 1, 'ease'], [0.36, 0, 'lin']]
   }
 });
 
 def('hook', {
+  relative: true,
   dur: 0.54,
   tracks: {
     'hips.y': [[0, 0.26], [0.06, 0.38, 'out'], [0.17, -0.26, 'snap'], [0.26, -0.22], [0.54, 0.26, 'out']],
@@ -431,11 +445,12 @@ def('hook', {
     'thighR.x': [[0, 0.20], [0.17, 0.06, 'snap'], [0.54, 0.20, 'out']],
     'hip.z': [[0, 0.0], [0.06, -0.03], [0.17, 0.06, 'snap'], [0.54, 0.0, 'out']],
     'hip.x': [[0, 0.0], [0.17, -0.04, 'snap'], [0.54, 0.0, 'out']],
-    'ikwHandL': [[0, 0, 'lin'], [0.13, 0.8, 'lin'], [0.28, 0.8, 'lin'], [0.36, 0, 'lin']]
+    'ikwHandL': [[0, 0, 'lin'], [0.06, 0, 'ease'], [0.168, 1, 'lin'], [0.27, 1, 'ease'], [0.42, 0, 'lin']]
   }
 });
 
 def('uppercut', {
+  relative: true,
   dur: 0.65,
   tracks: {
     'hip.y': [[0, -0.085], [0.09, -0.19, 'out'], [0.21, 0.04, 'snap'], [0.3, 0.0], [0.65, -0.085, 'out']],
@@ -455,11 +470,12 @@ def('uppercut', {
     'shinR.x': [[0, 0.30], [0.09, 0.58, 'out'], [0.21, 0.14, 'snap'], [0.65, 0.30, 'out']],
     'thighL.x': [[0, -0.30], [0.09, -0.16], [0.21, -0.46, 'snap'], [0.65, -0.30, 'out']],
     'shinL.x': [[0, 0.46], [0.09, 0.62], [0.21, 0.30, 'snap'], [0.65, 0.46, 'out']],
-    'ikwHandR': [[0, 0, 'lin'], [0.16, 0.75, 'lin'], [0.31, 0.75, 'lin'], [0.4, 0, 'lin']]
+    'ikwHandR': [[0, 0, 'lin'], [0.09, 0, 'ease'], [0.218, 1, 'lin'], [0.33, 1, 'ease'], [0.48, 0, 'lin']]
   }
 });
 
 def('kick', {
+  relative: true,
   dur: 0.62,
   release: { foot: 'R', from: 0.06, to: 0.52 },
   tracks: {
@@ -487,7 +503,8 @@ def('kick', {
     'upperArmR.z': [[0, -1.30], [0.20, -0.86, 'snap'], [0.62, -1.30, 'out']],
     'upperArmR.y': [[0, -0.30], [0.20, 0.30, 'snap'], [0.62, -0.30, 'out']],
     'forearmR.z': [[0, 1.85], [0.20, 1.30, 'snap'], [0.62, 1.85, 'out']],
-    'head.y': [[0, -0.26], [0.20, 0.10], [0.62, -0.26]]
+    'head.y': [[0, -0.26], [0.20, 0.10], [0.62, -0.26]],
+    'ikwFootR': [[0, 0, 'lin'], [0.10, 0, 'ease'], [0.202, 1, 'lin'], [0.31, 1, 'ease'], [0.48, 0, 'lin']]
   }
 });
 

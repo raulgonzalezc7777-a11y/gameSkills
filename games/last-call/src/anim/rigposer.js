@@ -23,6 +23,8 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3();
 const _pole = new THREE.Vector3(), _tgt = new THREE.Vector3(), _q = new THREE.Quaternion();
 const _step = new THREE.Vector3();   // reused for the FOOTSTEP payload
+const _side = new THREE.Vector3(), _aim = new THREE.Vector3(), _sh = new THREE.Vector3();
+const _chest = new THREE.Vector3(), _hfwd = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 
 // Gait tuning. Stride length is what keeps the feet from skating: the cycle
@@ -30,8 +32,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 const WALK_SPEED = 2.05, RUN_SPEED = 4.35;
 const WALK_STRIDE = 1.42, RUN_STRIDE = 2.32;
 const ANKLE_H = 0.075;          // foot bone height above the sole
+const HIT_ONSET = 2 / 60;       // seconds a hit reaction waits on its first key
 const ARM_REACH_HEAD = 1.52;    // where a head punch aims, above the floor
-const ARM_REACH_BODY = 1.16;
+const ARM_REACH_BODY = 1.10;    // and a body kick
 
 const norm01 = (v, def) => (v === undefined || v === null ? def : v > 1.5 ? clamp01(v / 100) : clamp01(v));
 
@@ -110,6 +113,15 @@ export class RigPoser {
     this.ikScale = 1;
     this.attackName = null;
     this.stateLabel = 'IDLE';
+    this._ikCtx = { drunk: 0, downed: false, ko: false, grounded: true, speed: 0, ikwHandL: 0, ikwHandR: 0, ikwFootL: 0, ikwFootR: 0 };
+    // The chains a strike can drive, built once so the frame loop only reads.
+    this.chains = {
+      handL: { root: BI.upperArmL, mid: BI.forearmL, end: BI.handL, axis: AXIS_ARM_L, i: 0, leg: false },
+      handR: { root: BI.upperArmR, mid: BI.forearmR, end: BI.handR, axis: AXIS_ARM_R, i: 1, leg: false },
+      footL: { root: BI.thighL, mid: BI.shinL, end: BI.footL, axis: AXIS_LEG, i: 0, leg: true },
+      footR: { root: BI.thighR, mid: BI.shinR, end: BI.footR, axis: AXIS_LEG, i: 1, leg: true }
+    };
+    this.strikeW = 0;
     this.measure();
   }
 
@@ -168,7 +180,10 @@ export class RigPoser {
     out.target = 0;
     out.rate = 3 / Math.max(0.02, def.layerOut);
     ch.slots[next].clip = clip;
-    ch.slots[next].t = 0;
+    // A reaction holds its first key for a beat. The hitstop freezes the frame
+    // right after contact, and a flinch that had already snapped the head
+    // away made every contact photograph as a miss.
+    ch.slots[next].t = key === 'hit' ? -HIT_ONSET : 0;
     ch.slots[next].def = def;
     inc.mask = def.mask === 'kick' ? MASK_KICK : def.mask === 'hit' ? MASK_HIT : MASK_UPPER;
     inc.rate = 3 / Math.max(0.02, def.layerIn);
@@ -297,7 +312,7 @@ export class RigPoser {
 
     // --- additive channels ------------------------------------------------
     this.stack.update(dt);
-    let ikwHandL = 0, ikwHandR = 0;
+    let ikwHandL = 0, ikwHandR = 0, ikwFootL = 0, ikwFootR = 0;
     for (const key in this.chan) {
       const ch = this.chan[key];
       for (let i = 0; i < 2; i++) {
@@ -310,9 +325,11 @@ export class RigPoser {
         const held = slot.def && slot.def.hold;
         const time = held ? Math.min(slot.t, slot.clip.duration) : slot.t;
         sampleClip(slot.clip, time, zeroPose(this.scratch));
-        subPose(layer.pose, this.scratch, GUARD_POSE);
+        subPose(layer.pose, this.scratch, slot.clip.rest || GUARD_POSE);
         ikwHandL += this.scratch[OFF_IKW + IK_HAND_L] * w;
         ikwHandR += this.scratch[OFF_IKW + IK_HAND_R] * w;
+        ikwFootL += this.scratch[OFF_IKW + IK_FOOT_L] * w;
+        ikwFootR += this.scratch[OFF_IKW + IK_FOOT_R] * w;
       }
     }
 
@@ -372,7 +389,10 @@ export class RigPoser {
 
     // --- commit ------------------------------------------------------------
     this.applyPose(basePose);
-    this.solveIK(dt, state, basePose, { drunk, downed, ko, grounded, speed, ikwHandL, ikwHandR });
+    const ik = this._ikCtx;
+    ik.drunk = drunk; ik.downed = downed; ik.ko = ko; ik.grounded = grounded; ik.speed = speed;
+    ik.ikwHandL = ikwHandL; ik.ikwHandR = ikwHandR; ik.ikwFootL = ikwFootL; ik.ikwFootR = ikwFootR;
+    this.solveIK(dt, state, basePose, ik);
   }
 
   applyPose(pose) {
@@ -470,40 +490,116 @@ export class RigPoser {
       levelFoot(foot, UP, this.footW[s.i] * 0.7);
     }
 
-    // --- arms --------------------------------------------------------------
-    const tgtObj = state.target && (state.target.isVector3 ? state.target : state.target.position);
-    const arms = [
-      { ua: BI.upperArmL, fa: BI.forearmL, hand: BI.handL, axis: AXIS_ARM_L, w: ctx.ikwHandL, i: 0, out: -1 },
-      { ua: BI.upperArmR, fa: BI.forearmR, hand: BI.handR, axis: AXIS_ARM_R, w: ctx.ikwHandR, i: 1, out: 1 }
-    ];
-    for (const a of arms) {
-      const w = clamp01(a.w) * (this.ikScale ?? 1);
-      this.handW[a.i] = w;
-      if (w <= 0.01) continue;
-      const ua = this.b[a.ua], fa = this.b[a.fa], hand = this.b[a.hand];
-      if (!ua || !fa || !hand) continue;
-      ua.getWorldPosition(_v1);
-      const body = this.attackName === 'kick';
-      if (tgtObj) {
-        _tgt.copy(tgtObj);
-        _tgt.y = groundY + (body ? ARM_REACH_BODY : ARM_REACH_HEAD) * this.scale;
-        // Drunk aim wanders, which is why a wasted fighter whiffs on camera.
-        _tgt.addScaledVector(_right, this.drunkL.lookError * 0.45);
-        _tgt.addScaledVector(_up, this.drunkL.lookError * 0.25);
-      } else {
-        // No opponent: punch straight out from the shoulder at full extension.
-        hand.getWorldPosition(_tgt);
-        _v3.copy(_tgt).sub(_v1);
-        _tgt.copy(_v1).addScaledVector(_v3.normalize(), this.armLen[a.i] * this.scale * 0.97);
-      }
-      _v3.copy(_tgt).sub(_v1);
-      const maxLen = this.armLen[a.i] * this.scale * 0.985;
-      const len = _v3.length();
-      if (len > maxLen) _tgt.copy(_v1).addScaledVector(_v3.multiplyScalar(1 / len), maxLen);
-      // Elbows stay under the punch, never above it.
-      _pole.copy(_v1).addScaledVector(_up, -0.9).addScaledVector(_fwd, -0.35).addScaledVector(_right, 0.35 * a.out);
-      solveTwoBone(ua, fa, hand, _tgt, _pole, a.axis, w, this.scale);
+    // --- strikes -----------------------------------------------------------
+    // The clip's ikw curve is the strike's extension: zero through the
+    // chamber, full across the active frames, zero again on recovery. The
+    // anticipation and the follow through are the authored clip; the solver
+    // only owns the part where the limb has to arrive somewhere.
+    const clipW = Math.max(ctx.ikwHandL, ctx.ikwHandR, ctx.ikwFootL, ctx.ikwFootR);
+    const aimed = state.strikeTarget && state.strikeLimb && this.chains[state.strikeLimb];
+    if (aimed) {
+      const w = clamp01(clipW) * (this.ikScale ?? 1) * (ctx.downed || ctx.ko ? 0 : 1);
+      this.strikeW = w;
+      if (w > 0.01) this.solveStrike(this.chains[state.strikeLimb], state.strikeTarget, state.strikeTip || 0, w);
+      this.handW[0] = state.strikeLimb === 'handL' ? w : 0;
+      this.handW[1] = state.strikeLimb === 'handR' ? w : 0;
+      return;
     }
+    this.strikeW = 0;
+
+    // No strike target handed in (the anim preview, a taunt, a super beat):
+    // whichever limb the clip extends goes at the look target if there is
+    // one, otherwise straight out in front, never off to the side where the
+    // additive keys alone would leave it.
+    const fb = this._fallback || (this._fallback = [
+      { ch: this.chains.handL, key: 'ikwHandL' }, { ch: this.chains.handR, key: 'ikwHandR' },
+      { ch: this.chains.footL, key: 'ikwFootL' }, { ch: this.chains.footR, key: 'ikwFootR' }
+    ]);
+    const look = state.target && (state.target.isVector3 ? state.target : state.target.position);
+    for (let k = 0; k < fb.length; k++) {
+      const a = fb[k];
+      const w = clamp01(ctx[a.key]) * (this.ikScale ?? 1) * (ctx.downed || ctx.ko ? 0 : 1);
+      if (a.ch.i < 2 && !a.ch.leg) this.handW[a.ch.i] = w;
+      if (w <= 0.01) continue;
+      const root = this.b[a.ch.root];
+      if (!root) continue;
+      root.getWorldPosition(_v1);
+      if (look) {
+        _tgt.copy(look);
+      } else {
+        const len = (a.ch.leg ? this.legLen : this.armLen[a.ch.i]) * this.scale * 0.97;
+        _tgt.copy(_v1).addScaledVector(_fwd, len);
+        _tgt.y = groundY + ARM_REACH_HEAD * this.scale;
+      }
+      if (a.ch.leg) _tgt.y = Math.min(_tgt.y, groundY + ARM_REACH_BODY * this.scale);
+      this.solveStrike(a.ch, _tgt, a.ch.leg ? 0 : 0.1, w);
+    }
+  }
+
+  // Drive one limb at a world target. 'tip' is how far the striking surface
+  // sits past the end bone (the knuckles past the wrist). The shape of the
+  // move is kept by where the target approaches from while the weight ramps:
+  // a hook swings in from outside the shoulder, an uppercut rises from below,
+  // a round kick comes around from the side, and only the endpoint is the
+  // opponent. Out of reach the limb straightens toward the target and stops
+  // short, which is the whiff the player should be able to read.
+  solveStrike(ch, target, tip, w) {
+    const root = this.b[ch.root], mid = this.b[ch.mid], end = this.b[ch.end];
+    if (!root || !mid || !end) return;
+    root.getWorldPosition(_sh);
+    const chest = this.b[BI.chest];
+    if (chest) chest.getWorldPosition(_chest); else _chest.copy(_sh);
+
+    // Horizontal direction to the target, and the side of the body the limb
+    // hangs from, both measured, so mirrored or bladed stances need no table.
+    _hfwd.copy(target).sub(_sh).setY(0);
+    if (_hfwd.lengthSq() < 1e-8) _hfwd.copy(_fwd).setY(0);
+    _hfwd.normalize();
+    _side.copy(_sh).sub(_chest).setY(0);
+    _side.addScaledVector(_hfwd, -_side.dot(_hfwd));
+    if (_side.lengthSq() < 1e-8) _side.set(_hfwd.z, 0, -_hfwd.x);
+    _side.normalize();
+
+    const kind = this.attackName;
+    const k = 1 - w;              // how much of the approach is still ahead
+    const s = this.scale;
+    _aim.copy(target);
+    if (kind === 'hook') {
+      _aim.addScaledVector(_side, 0.46 * k * s).addScaledVector(_hfwd, -0.22 * k * s);
+    } else if (kind === 'uppercut') {
+      _aim.addScaledVector(_up, -0.42 * k * s).addScaledVector(_hfwd, -0.14 * k * s);
+    } else if (kind === 'kick') {
+      _aim.addScaledVector(_side, 0.40 * k * s).addScaledVector(_up, -0.30 * k * s).addScaledVector(_hfwd, -0.20 * k * s);
+    } else {
+      _aim.addScaledVector(_up, -0.05 * k * s);
+    }
+
+    // The solver places the end bone, so back the striking surface off it
+    // along the line the limb is travelling, then clamp to the limb length.
+    _v3.copy(_aim).sub(_sh);
+    let len = _v3.length();
+    if (len > 1e-5) {
+      _v3.multiplyScalar(1 / len);
+      _aim.addScaledVector(_v3, -tip * s);
+      len = Math.max(0, len - tip * s);
+    }
+    const reach = (ch.leg ? this.legLen : this.armLen[ch.i]) * s * 0.985;
+    if (len > reach) _aim.copy(_sh).addScaledVector(_v3, reach);
+
+    // Bend planes per shape: a straight punch keeps the elbow under the
+    // fist, a hook lifts it level with the glove, an uppercut drops it, a
+    // kick turns the knee over toward the target.
+    _pole.copy(_sh);
+    if (ch.leg) {
+      _pole.addScaledVector(_hfwd, 0.9).addScaledVector(_up, 0.5).addScaledVector(_side, 0.45);
+    } else if (kind === 'hook') {
+      _pole.addScaledVector(_side, 0.9).addScaledVector(_up, 0.15).addScaledVector(_hfwd, -0.25);
+    } else if (kind === 'uppercut') {
+      _pole.addScaledVector(_up, -0.9).addScaledVector(_hfwd, 0.1).addScaledVector(_side, 0.25);
+    } else {
+      _pole.addScaledVector(_up, -0.9).addScaledVector(_hfwd, -0.3).addScaledVector(_side, 0.4);
+    }
+    solveTwoBone(root, mid, end, _aim, _pole, ch.axis, w, s);
   }
 
   // The kicking foot has to leave the ground, so the plant is released across

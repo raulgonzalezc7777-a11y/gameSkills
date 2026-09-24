@@ -2,12 +2,12 @@ import * as THREE from 'three';
 import { buildFighter } from '../characters/builder.js';
 import { RigPoser } from '../anim/rigposer.js';
 import { CFG } from '../core/config.js';
-import { clamp, clamp01, expDamp, dampAngle } from '../core/math.js';
+import { clamp, clamp01, expDamp, dampAngle, wrapAngle } from '../core/math.js';
 import { bus, EV } from '../core/events.js';
 import { rng } from '../core/rng.js';
 
 import { MOVES, ATTACKS, PARTS, STRIKES, TUNE, moveFor, buzzTier } from './moves.js';
-import { HurtboxSet, HitboxDebug } from './hitbox.js';
+import { HurtboxSet, HitboxDebug, segDistSq } from './hitbox.js';
 import { Chain } from './combo.js';
 import { resolveContact, limbEffects } from './damage.js';
 import { canClinch, startClinch, breakClinch, updateClinch } from './grapple.js';
@@ -25,16 +25,17 @@ const _v = new THREE.Vector3(), _w = new THREE.Vector3();
 const _tip = new THREE.Vector3(), _point = new THREE.Vector3(), _anchor = new THREE.Vector3();
 const _fwd = new THREE.Vector3(), _right = new THREE.Vector3();
 const _foot = new THREE.Vector3();
+const _aimC = new THREE.Vector3(), _root = new THREE.Vector3(), _sepA = new THREE.Vector3(), _sepB = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _s = new THREE.Vector3();
 const EMPTY_INTENT = Object.freeze({
   moveX: 0, moveY: 0, sprint: false, block: false, action: null,
   dodge: false, grab: false, taunt: false, special: false, drink: false
 });
 
-// The rig poser only knows a handful of punch shapes, so every move maps onto
+// The rig poser only knows a handful of strike shapes, so every move maps onto
 // one of them. A richer poser can read move.name off the fighter instead.
 const POSE_KIND = {
-  jab: 'jab', cross: 'cross', hook: 'hook', uppercut: 'uppercut', kick: 'hook',
+  jab: 'jab', cross: 'cross', hook: 'hook', uppercut: 'uppercut', kick: 'kick',
   knee: 'uppercut', toss: 'hook',
   glassJab: 'jab', glassSmash: 'hook', bottleJab: 'jab', bottleSwing: 'hook',
   bottleSmash: 'uppercut', stoolSwing: 'hook', stoolSlam: 'uppercut',
@@ -44,6 +45,7 @@ const POSE_KIND = {
 };
 
 let FRAME = 0;
+const FORCE = Object.freeze({ force: true });
 
 export class Fighter {
   constructor(spec, ctx) {
@@ -102,10 +104,25 @@ export class Fighter {
     this.debugHitboxes = false;
     this.debug = null;
     this.moveUsage = Object.create(null);
+    // Reused every frame: the poser reads it, nothing keeps it.
+    this._poseState = {
+      speed: 0, strafe: 0, drunk: 0, stance: 'fight', grounded: true, health: 1,
+      blocking: false, downed: false, stun: 0, attacking: null,
+      strikeTarget: null, strikeLimb: null, strikeTip: 0
+    };
 
     this._lm = { speedMul: 1, swayMul: 1, staminaMul: 1, costMul: 1, flashRisk: 0 };
     this._tipPrev = new THREE.Vector3();
     this._tipLimb = null;
+    // Where the current strike is aimed, in world space, handed to the poser
+    // so the limb goes where the hit is decided.
+    this._strikeT = new THREE.Vector3();
+    this._aimed = false;
+    // A hit's shove, spent on its own clock. Folding it into velocity let the
+    // stunned target's footing damp it out within two frames.
+    this.shove = new THREE.Vector3();
+    this.shoveHold = 0;
+    this._torsoCap = null;
     this._boneFrame = -1;
     this._wasBlocking = false;
     this._wasDead = false;
@@ -135,8 +152,11 @@ export class Fighter {
     };
   }
 
-  poseSafe(kind) {
-    try { this.poser?.play?.(POSE_KIND[kind] || kind || 'jab'); } catch { /* poser is another owner's file */ }
+  // Attacks force their pose: combat has already decided the strike is
+  // happening, and a flinch clip still winding down in the poser used to
+  // refuse it, leaving a hitbox live on a fist that never left the guard.
+  poseSafe(kind, force = false) {
+    try { this.poser?.play?.(POSE_KIND[kind] || kind || 'jab', force ? FORCE : undefined); } catch { /* never let the poser stop the fight */ }
   }
 
   noteMove(name) { this.moveUsage[name] = (this.moveUsage[name] || 0) + 1; }
@@ -175,13 +195,13 @@ export class Fighter {
     const err = (1 - acc) * 0.62;
     this.attacking = {
       name: move.name, move, cfg: move, t: 0, phase: 'startup', hit: false,
-      contact: -99, done: false, script: null,
+      contact: -99, done: false, script: null, lungeLeft: move.lunge || 0,
       aimX: err > 0 ? rng.gauss(0, err) : 0,
       aimY: err > 0 ? rng.gauss(0, err * 0.55) : 0
     };
     this._tipLimb = null; // force a fresh sweep origin for the new limb
     this.noteMove(move.name);
-    this.poseSafe(move.name);
+    this.poseSafe(move.name, true);
     bus.emit(EV.SFX, { name: 'whoosh', position: this.position, drunk: this.drunk01 });
     return true;
   }
@@ -294,6 +314,8 @@ export class Fighter {
     if (this.clinch) breakClinch(this, 'round');
     if (this.prop && this.propSys) this.propSys.drop(this);
     this.velocity.set(0, 0, 0);
+    this.shove.set(0, 0, 0);
+    this.shoveHold = 0;
   }
 
   // ----------------------------------------------------------------- update
@@ -408,15 +430,24 @@ export class Fighter {
     // one is still running.
     if (!locked && !superActive && !clinched && I.action) this.attack(I.action, opponent);
 
+    // Aim, step in behind the strike if the target is out of reach, then keep
+    // the two bodies apart. All three before the pose, so the pose is built
+    // around where the fighter really stands this frame.
+    this._aimed = this.aimStrike(dt, opponent, frame);
+    this.separate(dt, opponent);
+
     // Pose, commit the transform, then measure the world from the bones.
     this.object.rotation.y = this.facing;
+    const st = this._poseState;
+    st.speed = this.speed; st.drunk = this.drunk01; st.stance = this.blocking ? 'block' : 'fight';
+    st.health = this.health / CFG.fighter.maxHealth;
+    st.blocking = this.blocking; st.downed = this.downed > 0; st.stun = this.stun;
+    st.attacking = this.attacking ? this.attacking.name : null;
+    st.strikeTarget = this._aimed ? this._strikeT : null;
+    st.strikeLimb = this._aimed ? this.attacking.move.limb : null;
+    st.strikeTip = this._aimed ? this.attacking.move.extend : 0;
     try {
-      this.poser.update(dt, {
-        speed: this.speed, strafe: 0, drunk: this.drunk01, stance: this.blocking ? 'block' : 'fight',
-        grounded: true, health: this.health / CFG.fighter.maxHealth,
-        blocking: this.blocking, downed: this.downed > 0, stun: this.stun,
-        attacking: this.attacking ? this.attacking.name : null
-      });
+      this.poser.update(dt, st);
     } catch { /* the poser belongs to ANIM, never let it stop the fight */ }
     this.knockdownPose(dt);
     this._boneFrame = -1;
@@ -481,39 +512,169 @@ export class Fighter {
     this.position.x += this.velocity.x * dt;
     this.position.z += this.velocity.z * dt;
     this.velocity.multiplyScalar(Math.exp(-2.2 * dt));
-
-    const R = (this.arena?.radius ?? 9.5) - 0.5;
-    const r = Math.hypot(this.position.x, this.position.z);
-    if (r > R) { this.position.x *= R / r; this.position.z *= R / r; }
-
-    if (opponent) {
-      _v.copy(this.position).sub(opponent.position).setY(0);
-      const d = _v.length();
-      const minD = D.radius * 2 + 0.28;
-      if (d < minD && d > 1e-4) {
-        _v.multiplyScalar((minD - d) * 0.5 / d);
-        this.position.add(_v);
-        opponent.position.sub(_v);
-      }
+    if (this.shoveHold > 0) {
+      this.shoveHold -= dt;
+    } else {
+      this.position.x += this.shove.x * dt;
+      this.position.z += this.shove.z * dt;
+      this.shove.multiplyScalar(Math.exp(-TUNE.shoveDecay * dt));
     }
+
+    this.clampToArena();
     this.speed = Math.hypot(this.velocity.x, this.velocity.z);
   }
 
-  // The hitbox. One end is the attacking limb's bone, so it follows the pose;
-  // the other is authored in fighter space from the move's reach and height,
-  // so a move has the range the table promises whatever the poser is doing
-  // this week. The capsule is then swept against where it was last frame.
+  clampToArena() {
+    const R = (this.arena?.radius ?? 9.5) - 0.5;
+    const r = Math.hypot(this.position.x, this.position.z);
+    if (r > R) { this.position.x *= R / r; this.position.z *= R / r; }
+  }
+
+  // Where the strike is going. The zone is picked by the move's aim height,
+  // the point is on the surface of that hurtbox facing the striking limb and
+  // a few centimetres inside it, and the drunk aim error is added last so a
+  // wasted fighter's fist really does sail past. Returns false when there is
+  // nothing to aim, which leaves the poser to its authored clip.
+  aimStrike(dt, opponent, frame) {
+    const a = this.attacking;
+    if (!a || a.script || !opponent || opponent.dead) return false;
+    const m = a.move;
+    if (m.type !== 'strike' && m.type !== 'prop') return false;
+    const bones = this.rig?.bones;
+    const limb = bones && bones[m.limb];
+    const root = limb && limb.parent && limb.parent.parent;
+    if (!root) return false;
+    const set = opponent.syncBones ? opponent.syncBones(frame) : opponent.hurtboxes;
+    if (!set || !set.capsules.length) return false;
+
+    const zone = m.hitY >= 1.3 ? 'head' : 'torso';
+    let c = null;
+    for (let i = 0; i < set.capsules.length; i++) if (set.capsules[i].zone === zone) { c = set.capsules[i]; break; }
+    if (!c) c = set.capsules[0];
+    // Jaw for the head shots, the chin for an uppercut, the floating ribs for
+    // the kick: along the capsule axis, not its middle.
+    const kind = POSE_KIND[m.name] || 'jab';
+    const along = zone === 'head' ? (kind === 'uppercut' ? 0.26 : 0.42) : 0.42;
+    _aimC.copy(c.a).lerp(c.b, along);
+
+    root.getWorldPosition(_root);
+    _w.copy(_root).sub(_aimC).setY(0);
+    if (_w.lengthSq() < 1e-8) _w.set(-Math.sin(this.facing), 0, -Math.cos(this.facing));
+    _w.normalize();
+    // An uppercut arrives from below, so its contact is under the chin.
+    if (kind === 'uppercut' && zone === 'head') { _w.multiplyScalar(0.8); _w.y = -0.6; }
+    const T = this._strikeT;
+    T.copy(_aimC).addScaledVector(_w, c.r - TUNE.aimPenetration);
+    // The body throws the punch, not the eyes: whatever the facing is off by
+    // (the drunk sway, a turn still in progress) swings the aim point around
+    // the fighter by the same angle, so a strike thrown while turned away
+    // goes where the shoulders point and misses honestly.
+    const dx = T.x - this.position.x, dz = T.z - this.position.z;
+    const err = wrapAngle(this.facing - Math.atan2(opponent.position.x - this.position.x, opponent.position.z - this.position.z));
+    if (err !== 0) {
+      const ce = Math.cos(err), se = Math.sin(err);
+      T.x = this.position.x + dx * ce + dz * se;
+      T.z = this.position.z - dx * se + dz * ce;
+    }
+    _fwd.set(Math.sin(this.facing), 0, Math.cos(this.facing));
+    _right.set(_fwd.z, 0, -_fwd.x);
+    T.addScaledVector(_right, a.aimX);
+    T.y += a.aimY;
+
+    // Step in behind the strike while the target is out of reach. The limb is
+    // measured off the rig, so a long armed build steps less.
+    if (a.phase !== 'recovery' && !a.hit && a.lungeLeft > 0 && opponent.downed <= 0) {
+      const scale = this.rig.group?.scale?.x || 1;
+      // Hooks and uppercuts are thrown with the elbow bent, so they step in to
+      // a closer range than a straight punch would; out of range the arm still
+      // straightens in the poser and the step simply runs out.
+      const use = TUNE.reachUse * (kind === 'hook' || kind === 'uppercut' ? TUNE.bentArmReach : 1);
+      const len = (limb.parent.position.length() + limb.position.length() + (m.extend || 0)) * scale * use;
+      const dy = T.y - _root.y;
+      const flat = Math.sqrt(Math.max(0, len * len - dy * dy));
+      const dh = Math.hypot(T.x - _root.x, T.z - _root.z);
+      const need = dh - flat;
+      if (need > 0) {
+        _v.copy(opponent.position).sub(this.position).setY(0);
+        const d = _v.length();
+        // Never step into the space the spacing rule keeps between bodies.
+        const step = Math.min(need, a.lungeLeft, TUNE.lungeSpeed * dt, Math.max(0, d - TUNE.bodyGap));
+        if (d > 1e-4 && step > 0) {
+          this.position.addScaledVector(_v, step / d);
+          a.lungeLeft -= step;
+          this.clampToArena();
+        }
+      }
+    }
+    return true;
+  }
+
+  // Two bodies never share space. Each fighter resolves its own half of any
+  // overlap, softly so a clinch or a pressing walk settles instead of
+  // jittering, with a hard floor so nothing tunnels. The torso check catches
+  // what root distance cannot: a lean or a lunge that brings the chests
+  // together while the feet are still apart.
+  separate(dt, opponent) {
+    if (!opponent) return;
+    _v.copy(this.position).sub(opponent.position).setY(0);
+    let d = _v.length();
+    const minD = this.clinch ? TUNE.bodyGapClinch : TUNE.bodyGap;
+    let push = d < minD ? minD - d : 0;
+
+    const mine = this.torsoCapsule(), theirs = opponent.torsoCapsule?.();
+    if (mine && theirs && this.downed <= 0 && opponent.downed <= 0) {
+      const tq = Math.sqrt(segDistSq(mine.a, mine.b, theirs.a, theirs.b, _sepA, _sepB));
+      const gap = this.clinch ? TUNE.torsoGap * 0.8 : TUNE.torsoGap;
+      if (tq < gap) push = Math.max(push, gap - tq);
+    }
+    if (push <= 0) return;
+    if (d < 1e-4) { _v.set(-Math.sin(this.facing), 0, -Math.cos(this.facing)); d = 1; }
+    else _v.multiplyScalar(1 / d);
+
+    const share = push * 0.5;
+    const hard = Math.max(0, share - 0.06);
+    const soft = (share - hard) * (1 - Math.exp(-TUNE.bodyGapRate * dt));
+    this.position.addScaledVector(_v, hard + soft);
+    // Walking into someone does not store up speed to spend when they move.
+    const vin = this.velocity.x * _v.x + this.velocity.z * _v.z;
+    if (vin < 0) { this.velocity.x -= _v.x * vin; this.velocity.z -= _v.z * vin; }
+    this.clampToArena();
+  }
+
+  torsoCapsule() {
+    if (!this._torsoCap) {
+      const caps = this.hurtboxes.capsules;
+      for (let i = 0; i < caps.length; i++) if (caps[i].zone === 'torso') { this._torsoCap = caps[i]; break; }
+    }
+    return this._torsoCap;
+  }
+
+  // The hitbox is the striking surface and nothing else: the fist from the
+  // wrist to the knuckles (or the prop past it), the shin and instep for a
+  // kick. It follows the posed bones, so a hit can only register where the
+  // limb visibly is. It used to run out to a point authored in front of the
+  // fighter, which let a hook that sailed half a metre wide still connect.
   hitCapsule(move, anchor, tip) {
     const bones = this.rig?.bones || {};
     const bone = bones[move.limb] || bones.handR || bones.chest || bones.hips;
-    if (bone) bone.matrixWorld.decompose(anchor, _q, _s);
-    else anchor.set(this.position.x, move.hitY, this.position.z);
-    _fwd.set(Math.sin(this.facing), 0, Math.cos(this.facing));
-    _right.set(_fwd.z, 0, -_fwd.x);
-    tip.set(this.position.x, move.hitY, this.position.z);
-    tip.addScaledVector(_fwd, move.reach * TUNE.reachScale + move.extend);
-    const a = this.attacking;
-    if (a) { tip.addScaledVector(_right, a.aimX); tip.y += a.aimY; }
+    if (!bone) {
+      _fwd.set(Math.sin(this.facing), 0, Math.cos(this.facing));
+      anchor.set(this.position.x, move.hitY, this.position.z);
+      return tip.copy(anchor).addScaledVector(_fwd, move.extend || 0.1);
+    }
+    anchor.setFromMatrixPosition(bone.matrixWorld);
+    const parent = bone.parent;
+    if (parent && parent.isBone) {
+      _w.setFromMatrixPosition(parent.matrixWorld);
+      _s.copy(anchor).sub(_w);
+    } else {
+      _s.set(Math.sin(this.facing), 0, Math.cos(this.facing));
+    }
+    const l = _s.length();
+    if (l > 1e-6) _s.multiplyScalar(1 / l); else _s.set(0, 1, 0);
+    tip.copy(anchor).addScaledVector(_s, move.extend || 0);
+    // A round kick lands with the lower shin as much as the foot.
+    if (/^foot/.test(move.limb) && parent && parent.isBone) anchor.lerp(_w, 0.45);
     return tip;
   }
 

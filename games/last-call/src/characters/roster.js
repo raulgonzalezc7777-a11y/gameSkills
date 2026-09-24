@@ -16,10 +16,23 @@
 //   beard      boolean, swaps stubble for a jaw shell
 //   stubble    0..1, ignored when beard is set
 //   tattoo     false | 'sleeve' | 'chest' | 'full'
+//   sex        'f' for a woman's face (brow, jaw, nose, lips, brows, no stubble)
+//   face       what a life of fighting left on the face, all optional:
+//     age        0..1, depth of lines and folds
+//     furrow     0..1, how hard the brows are drawn down in the fighting face
+//     squint     0..1, how far the lids close over the iris
+//     flat       0..1, a nose broken flat;  crook: metres it is knocked aside
+//     noseBreak  0..1, the bump on the bridge
+//     cleft      0..1, chin cleft;  fold: 0..1, cheek pad over the smile line
+//     scarTissue 0..1, thickened, shiny brows over the orbits
+//     cauli      'L' | 'R', a cauliflower ear
+//     scars      ['brow:L', 'nose', 'cheek:R', 'chin', 'lip:L']
+//     moles, freckles, browBulk
 export const ROSTER = [
   {
     name: 'Vic "The Boiler" Kozlov',
     id: 'boiler',
+    face: { age: 0.7, furrow: 0.75, squint: 0.5, flat: 0.45, crook: 0.0016, noseBreak: 0.8, fold: 0.85, scarTissue: 0.45, scars: ['brow:L', 'nose'], moles: 1, browBulk: 0.9 },
     build: 'bruiser',
     skin: '#c99a76', sss: '#c04a2e',
     tank: '#8e1f25', trunks: '#1a1d28', belt: '#0d0f16',
@@ -31,6 +44,7 @@ export const ROSTER = [
   {
     name: 'Dez Okonjo',
     id: 'dez',
+    face: { age: 0.3, furrow: 0.55, squint: 0.45, flat: 0.1, cleft: 0.35, fold: 0.5, scars: ['cheek:R'], moles: 1, browBulk: 0.6 },
     build: 'lean',
     skin: '#6d4328', sss: '#8e2a18',
     tank: '#e8e4d8', trunks: '#1d5a52', belt: '#123b36',
@@ -42,18 +56,21 @@ export const ROSTER = [
   {
     name: 'Marta Reyes',
     id: 'marta',
+    sex: 'f',
+    face: { age: 0.35, furrow: 0.45, squint: 0.3, noseBreak: 0, fold: 0.35, scars: ['chin'], moles: 2, browBulk: 0.5 },
     build: 'athletic',
     scale: 0.955,
     skin: '#bb8258', sss: '#b8452c',
     tank: '#d43f6a', trunks: '#22252f', belt: '#14161d',
     wrap: '#f0ece0', shoe: '#d43f6a', sole: '#f0ece0',
-    hair: '#241510', hairStyle: 'short', stubble: 0,
+    hair: '#241510', hairStyle: 'short', bun: true, stubble: 0,
     eyes: '#241a12', tattoo: 'chest',
     taunt: 'Try to keep up.'
   },
   {
     name: 'Bogdan Petric',
     id: 'bogdan',
+    face: { age: 0.95, furrow: 0.65, squint: 0.55, flat: 0.8, crook: -0.0022, noseBreak: 1, fold: 1, scarTissue: 1, cauli: 'R', scars: ['brow:R', 'lip:L'], moles: 2, browBulk: 1 },
     build: 'stocky',
     skin: '#d0a079', sss: '#c25234',
     tank: '#4f5a2c', trunks: '#31261c', belt: '#1d160f',
@@ -65,6 +82,7 @@ export const ROSTER = [
   {
     name: 'Kiko Tanaka',
     id: 'kiko',
+    face: { age: 0.35, furrow: 0.6, squint: 0.5, flat: 0.15, noseBreak: 0.3, fold: 0.45, scars: ['brow:R'], browBulk: 0.4 },
     build: 'rangy',
     skin: '#d9b183', sss: '#b04a30',
     tank: '#1b2c4a', trunks: '#c9c2b2', belt: '#8a3038',
@@ -76,6 +94,8 @@ export const ROSTER = [
   {
     name: 'Ruthie Kane',
     id: 'ruthie',
+    sex: 'f',
+    face: { age: 0.5, furrow: 0.5, squint: 0.38, flat: 0.25, crook: 0.0010, noseBreak: 0.4, fold: 0.5, scars: ['brow:L'], freckles: 1, browBulk: 0.5 },
     build: 'slugger',
     scale: 0.975,
     skin: '#e6b795', sss: '#c8563a',

@@ -10,18 +10,20 @@
 
 const F = 1 / 60;
 
-// limb: which bone drives the hitbox and anchors its capsule. extend is the
-// slack past the bone. hitR is the capsule radius. level picks the reaction.
-// The far end of the capsule is authored in fighter space (reach, hitY) the way
-// a fighting game authors hitboxes, so the move has the range the table says
-// even while another owner is rewriting the poser under us.
+// limb: which bone the hitbox rides on. The capsule is the striking surface
+// itself, from that bone along its parent to bone line for 'extend' metres
+// (the fist past the wrist, the bottle past the fist), with radius hitR. It
+// is deliberately close to the size of the mesh: a hit is where the fist
+// visibly is, never a box authored out in front of the fighter. 'reach' and
+// 'hitY' now say what the strike is aimed at (hitY picks head or body) and
+// how far it may step in to get there, see LUNGE below.
 const RAW = {
   // name        st  ac  rc   dmg  stam reach push level     limb     extend hitR cancel guard  type     hitY
-  jab:        [  5,  3,  9,   5.5,  5,  1.30, 1.2, 'light',  'handL', 0.16, 0.11, 0.30, 'high', 'strike', 1.52],
-  cross:      [  8,  4, 13,  10.0,  9,  1.45, 2.4, 'mid',    'handR', 0.18, 0.12, 0.26, 'high', 'strike', 1.52],
-  hook:       [ 10,  5, 17,  13.5, 12,  1.28, 3.0, 'heavy',  'handL', 0.20, 0.14, 0.22, 'high', 'strike', 1.46],
-  uppercut:   [ 13,  6, 21,  17.0, 16,  1.15, 3.6, 'launch', 'handR', 0.20, 0.15, 0.20, 'high', 'strike', 1.40],
-  kick:       [ 12,  6, 19,  14.0, 14,  1.70, 3.2, 'mid',    'footR', 0.24, 0.15, 0.18, 'low',  'strike', 1.05],
+  jab:        [  5,  3,  9,   5.5,  5,  1.30, 1.2, 'light',  'handL', 0.11, 0.075, 0.30, 'high', 'strike', 1.52],
+  cross:      [  8,  4, 13,  10.0,  9,  1.45, 2.4, 'mid',    'handR', 0.11, 0.075, 0.26, 'high', 'strike', 1.52],
+  hook:       [ 10,  5, 17,  13.5, 12,  1.28, 3.0, 'heavy',  'handL', 0.11, 0.08, 0.22, 'high', 'strike', 1.46],
+  uppercut:   [ 13,  6, 21,  17.0, 16,  1.15, 3.6, 'launch', 'handR', 0.11, 0.08, 0.20, 'high', 'strike', 1.40],
+  kick:       [ 12,  6, 19,  14.0, 14,  1.70, 3.2, 'mid',    'footR', 0.08, 0.10, 0.18, 'low',  'strike', 1.05],
 
   // Clinch tools. Reached through G, not through the attack buttons.
   knee:       [  7,  4, 11,   9.0,  8,  0.95, 1.0, 'mid',    'footL', 0.14, 0.13, 0.24, 'mid',  'grapple', 1.05],
@@ -51,6 +53,18 @@ const RAW = {
   borraFinish:[ 10,  8, 30,  26.0,  0,  2.00, 8.0, 'slam',   'handR', 0.30, 0.26, 0.00, 'high', 'super', 1.50]
 };
 
+// How far a strike may carry the fighter forward to find its target, metres.
+// The arm is only so long: a jab thrown from the range the table promises
+// has to step in behind it, exactly as a boxer does. The step is spent only
+// while the target is out of reach and stops on contact, so it never walks
+// the attacker through the defender, and a target further away than arm plus
+// step is simply missed with the arm at full stretch.
+const LUNGE = {
+  jab: 0.40, cross: 0.46, hook: 0.36, uppercut: 0.34, kick: 0.40,
+  glassJab: 0.36, glassSmash: 0.32, bottleJab: 0.36, bottleSwing: 0.32,
+  bottleSmash: 0.30, stoolSwing: 0.30, stoolSlam: 0.28
+};
+
 function build() {
   const out = {};
   for (const [name, r] of Object.entries(RAW)) {
@@ -73,10 +87,10 @@ function build() {
       cancel: r[11],
       guard: r[12],
       type: r[13],
-      // Authored hitbox height in metres off the floor. The capsule runs from
-      // the limb bone to a point at this height, 'reach' metres ahead, which is
-      // how a body kick hits the body while the foot is down at ankle height.
+      // Aim height in metres off the floor: at or above 1.3 the strike is
+      // aimed at the head, below it at the body.
       hitY: r[14],
+      lunge: LUNGE[name] ?? 0,
       // Kept for the old call sites that read cfg.part directly.
       part: r[12] === 'low' ? 'legs' : r[12] === 'mid' ? 'body' : 'head'
     };
@@ -132,8 +146,21 @@ export function buzzTier(buzz) {
 // Everything the combat modules tune against. Lives here rather than in
 // core/config.js because combat owns these files and nothing else reads them.
 export const TUNE = {
-  // Hitboxes
-  reachScale: 0.78,        // authored point sits this far along 'reach'
+  // Hitboxes and aim
+  reachScale: 0.78,        // legacy: the authored hitbox tip, kept for tools
+  aimPenetration: 0.035,   // the aim point sits this far inside the target surface
+  lungeSpeed: 5.2,         // m/s cap on the step behind a strike
+  reachUse: 0.93,          // fraction of the limb length a strike is thrown at
+  bentArmReach: 0.80,      // hooks and uppercuts land with the elbow bent
+
+  // Spacing. Root to root, metres. The push is soft so two fighters leaning
+  // on each other settle instead of buzzing, with a hard floor behind it.
+  bodyGap: 0.72,
+  bodyGapClinch: 0.60,
+  bodyGapRate: 26,          // 1/s, how fast an overlap is resolved
+  torsoGap: 0.44,           // torso axis to torso axis, catches leans and lunges
+  shoveDecay: 9.0,          // 1/s, a hit's shove is spent over about a tenth of a second
+  shoveOnset: 2 / 60,       // the shove waits this long, matching the reaction pose
 
   // Chains
   chainWindow: 0.28,        // matches input.bufferWindow, the buffer is the window
@@ -169,10 +196,15 @@ export const TUNE = {
   // Damage. Tuned from a keyboard playtest, not from the table: at the old
   // values the player lost three quarters of their health in eight seconds and
   // the head pool emptied so fast that nearly every clean shot was a knockdown.
-  damageScale: 0.46,        // one global lever, so a round lasts about a minute
+  // Retuned again when hitboxes became the real fist: a well thrown strike
+  // now lands about twice as often as the old authored box let it (which
+  // missed at close range and whenever the poser had not played the swing),
+  // so each hit carries less and the per hit knockdown roll is smaller. The
+  // AI against AI bench holds the old match length and knockdown count.
+  damageScale: 0.28,        // one global lever, so a round lasts about a minute
   partDamageMul: 1.05,      // per-limb pools drain faster than the health bar
   knockdownPerDamage: 0.0042,
-  headKnockdownBias: 0.14,
+  headKnockdownBias: 0.08,  // rolled per clean head hit, so it scales with hit rate
   hitstunPerDamage: 0.011,
   chipMul: 0.22,
 

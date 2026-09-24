@@ -5,11 +5,12 @@ import {
 } from './mesh.js';
 import {
   SKIN_ATLAS, makeSkinCanvas, makeSkinMaterial, makeClothMaterial, makeRubberMaterial,
-  makeHairMaterial, makeEyeMaterial, makeDarkMaterial, makeMetalMaterial, makeSweatSetter
+  makeHairMaterial, makeEyeMaterial, makeDarkMaterial, makeMetalMaterial, makeSweatSetter,
+  makeCorneaMaterial, makeLashMaterial, makeSkinSurfaceCanvases, finishSkinSurface, EYE_LIMBUS, eyeV
 } from './materials.js';
 import { createDamage, paintTattoos } from './damage.js';
-import { HEAD_C, EYE, makeSculpt, buildHeadGrid, buildShell, profile, buildEar, cast } from './head.js';
-import { makeHeadPainter, paintFace } from './face.js';
+import { HEAD_C, EYE, makeSculpt, buildHeadGrid, buildShell, profile, buildEar, cast, makeAperture, lidPoint } from './head.js';
+import { makeFacePainters, paintFace, paintExtremities } from './face.js';
 
 // The fighter. One skinned mesh: a lofted body, a sculpted head and neck
 // welded onto it, garments sampled off the body they are worn over, all
@@ -43,7 +44,7 @@ const BIND_ARM_Z = 0.62, BIND_FORE_Z = 0.10;
 const REST_ARM_Z = 1.35, REST_FORE_Z = 0.15;
 
 // The torso and the head grid share one column count so the neck ring welds.
-const SIDES_BODY = 80, SIDES_LIMB = 24, SIDES_SMALL = 16, SIDES_CLOTH = 48;
+const SIDES_BODY = 104, SIDES_LIMB = 24, SIDES_SMALL = 16, SIDES_CLOTH = 48;
 const TAU = Math.PI * 2;
 
 // Silhouette is the first thing that reads and the last thing a player forgets,
@@ -216,6 +217,7 @@ function sectionPoint(p, u, v, node, th, pad) {
 // ------------------------------------------------------------- the build ---
 
 export function buildFighter(spec = {}) {
+  let __t = performance.now(); const __T = (n) => { const t = performance.now(); console.log('T', n, (t - __t).toFixed(0)); __t = t; };
   const seed = hashString(spec.name || 'fighter');
   const rng = makeRng(seed);
   const bt = BODY_TYPES[spec.build] || BODY_TYPES.athletic;
@@ -262,6 +264,20 @@ export function buildFighter(spec = {}) {
   const P = {};
   for (const n of BONE_NAMES) P[n] = new THREE.Vector3().setFromMatrixPosition(bones[n].matrixWorld);
 
+  // ---- face character ------------------------------------------------------
+  // What the roster says about a face (see roster.js 'face'), filled in with
+  // a focused fighting expression where it says nothing. The squint has to be
+  // known before the eye material, which bakes the lid shadow for it.
+  const fc = spec.face || {};
+  const fem = spec.sex === 'f' ? 1 : 0;
+  const expr = {
+    fem,
+    furrow: fc.furrow ?? 0.55,
+    squint: fc.squint ?? 0.45,
+    age: fc.age ?? 0.5
+  };
+  const ap = makeAperture(expr.squint);
+
   // ---- materials ---------------------------------------------------------
   const skinTone = spec.skin ?? '#c08055';
   const hairStyle = spec.hairStyle ?? 'short';
@@ -280,7 +296,9 @@ export function buildFighter(spec = {}) {
     shoe: makeClothMaterial(spec.shoe ?? '#2a2f38', { kind: 'knit', seed: (seed % 23) + 170, repeat: [3, 3], name: 'shoe', sheen: 0.25 }),
     sole: makeRubberMaterial(spec.sole ?? '#cfc8ba', { seed: (seed % 19) + 210 }),
     belt: makeClothMaterial(spec.belt ?? '#12141c', { kind: 'rib', seed: (seed % 13) + 240, repeat: [14, 1], name: 'belt', sheen: 0.3 }),
-    eye: makeEyeMaterial(spec.eyes ?? '#3a2a1c', seed % 7),
+    eye: makeEyeMaterial(spec.eyes ?? '#3a2a1c', seed % 7, ap),
+    cornea: makeCorneaMaterial(),
+    lash: makeLashMaterial(spec.hair ?? '#231a14'),
     dark: makeDarkMaterial('#0d0b0a'),
     trim: makeMetalMaterial('#b9a071')
   };
@@ -324,48 +342,68 @@ export function buildFighter(spec = {}) {
   const torsoRings = loft(torsoNodes, SIDES_BODY);
   b.begin(M.skin, { group: 'body', region: 'body' });
   b.addRings(torsoRings, A.body, { evenV: true, capStart: true, capSmooth: true });
+  const torsoVerts = b.vertexCount;
 
   // ---- head ----------------------------------------------------------------
   // A fighter's face, not a mannequin's: the build sets the jaw and brow, the
   // name seeds the rest so no two share a nose.
   const H = bt.head;
+  const side = (c) => (c === 'L' ? -1 : c === 'R' ? 1 : 0);
   const face = {
-    H, NK, SH, mu,
+    H, NK: NK * (1 - 0.10 * fem), SH, mu,
     jaw: bt.jaw * (0.97 + rng() * 0.06),
     brow: bt.brow * (0.92 + rng() * 0.16),
     cheek: bt.cheek * (0.94 + rng() * 0.12),
     nose: 0.94 + rng() * 0.16,
-    noseBreak: rng() < 0.5 ? rng() : 0,
+    noseBreak: fc.noseBreak ?? (rng() < 0.5 ? rng() : 0),
     chin: 0.94 + rng() * 0.14,
     lips: spec.lips ?? (0.95 + rng() * 0.15),
-    neckBase
+    neckBase,
+    fem, furrow: expr.furrow, ap,
+    flat: fc.flat ?? 0, crook: fc.crook ?? 0, cleft: fc.cleft ?? 0,
+    scar: fc.scarTissue ?? 0, fold: fc.fold ?? 0.6,
+    // A face is never symmetric: one brow sits higher, one mouth corner
+    // lower, one cheekbone fuller. Small, seeded, so a fighter keeps his.
+    asym: { brow: (rng() - 0.5) * 0.0018, mouth: (rng() - 0.5) * 0.0012, cheek: (rng() - 0.5) * 0.06 }
   };
+  __T('sculpt');
   const sdf = makeSculpt(face);
   const grid = buildHeadGrid(sdf, torsoRings[torsoRings.length - 1], neckBase);
   b.begin(M.skin, { group: 'body', region: 'head' });
   b.addRings(grid.rings, A.head, { capEnd: true, capSmooth: true });
 
-  // Eyes: textured spheres sitting in the sockets the sculpt cut for them.
+  __T('grid');
+  // Eyes: an eyeball with the iris set back as a near flat disc, a wet shell
+  // over it that bulges into a cornea in front of the iris, and a ribbon of
+  // lashes along the upper lid margin. The lid shadow is baked into the
+  // eyeball texture for this fighter's aperture.
   const hc = (x, y, z) => new THREE.Vector3(x * H, HEAD_C.y + (y - HEAD_C.y) * H, HEAD_C.z + (z - HEAD_C.z) * H);
+  const er = EYE.r * H * 0.985;
   for (const s of [-1, 1]) {
     const c = hc(s * EYE.x, EYE.y, EYE.z);
-    const g = new THREE.SphereGeometry(EYE.r * H * 0.985, 16, 10);
-    // Pole forward, gaze a touch toward the nose so the eyes converge on a
-    // point a couple of metres out rather than staring through it.
-    const m = new THREE.Matrix4().makeRotationY(-s * 0.03).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+    // Gaze a touch toward the nose so the eyes converge on a point a couple
+    // of metres out rather than staring through it.
+    const m = new THREE.Matrix4().makeRotationY(-s * 0.03);
     m.setPosition(c.x, c.y, c.z);
+    const [ball, film] = eyeGeometries(er, s);
     b.begin(M.eye, { group: 'body', region: 'eye' });
-    b.addGeometry(g, [0, 0, 1, 1], m);
-    g.dispose();
+    b.addGeometry(ball, [0, 0, 1, 1], m);
+    b.begin(M.cornea, { group: 'body', region: 'eye' });
+    b.addGeometry(film, [0, 0, 1, 1], m);
+    ball.dispose(); film.dispose();
+    b.begin(M.lash, { group: 'body', region: 'hair' });
+    b.addRings(lashRibbon(s, H, ap, fem), [0, 0, 1, 1], { closed: false });
+    b.addRings(lashRibbon(s, H, ap, fem), [0, 0, 1, 1], { closed: false, flipWinding: true });
   }
 
   // Ears, with thinness in aux so a back light glows through them.
   const earRect = uvSub(A.spare, 0.05, 0.03, 0.95, 0.45);
   for (const s of [-1, 1]) {
     b.begin(M.skin, { group: 'body', region: 'head', aux0: 1 });
-    b.addRings(buildEar(s, H), earRect, { capStart: true, capEnd: true, capSmooth: true, flipWinding: s < 0 });
+    b.addRings(buildEar(s, H, side(fc.cauli) === s ? 1 : 0), earRect, { capStart: true, capEnd: true, capSmooth: true, flipWinding: s < 0 });
   }
 
+  __T('eyes-ears');
   // ---- arms and fists ----------------------------------------------------
   const fistRect = uvSub(A.spare, 0.05, 0.52, 0.95, 0.97);
   for (const S of ['L', 'R']) {
@@ -532,6 +570,7 @@ export function buildFighter(spec = {}) {
     b.addRings(loft(laceNodes, 10), [0, 0, 1, 1], { evenV: true, capStart: true, capEnd: true });
   }
 
+  __T('limbs');
   // ---- tank top ----------------------------------------------------------
   // Upper body surface at a height and angle: the loft up to the neck base,
   // the sculpt above it, so a strap over the trapezius lies on the muscle.
@@ -543,6 +582,19 @@ export function buildFighter(spec = {}) {
       [0.86, 1.340], [1.08, 1.268], [1.5708, 1.230], [2.05, 1.272], [2.26, 1.360], [2.42, 1.448],
       [2.52, 1.470], [2.66, 1.452], [2.88, 1.430], [Math.PI, 1.424]
     ]);
+    // Skin that the vest covers is drawn in by 3 mm. Nobody sees it, and it
+    // buys the panel the margin a flat facet between two loft columns would
+    // otherwise eat on the crown of a pec or a lat.
+    for (let v = 0; v < torsoVerts; v++) {
+      const x = b.pos[v * 3], y = b.pos[v * 3 + 1], z = b.pos[v * 3 + 2];
+      if (y < 1.03 || y > 1.47) continue;
+      const th = Math.atan2(x / 0.16, z / 0.11);
+      const k = smooth01((tankTop(th) - 0.010 - y) / 0.02) * smooth01((y - 1.03) / 0.03);
+      if (k <= 0) continue;
+      const r = Math.hypot(x, z) || 1;
+      b.pos[v * 3] -= (x / r) * 0.003 * k;
+      b.pos[v * 3 + 2] -= (z / r) * 0.003 * k;
+    }
     const ph = [rng() * TAU, rng() * TAU, rng() * TAU];
     // More columns than the other garments: the vest crosses the sharpest
     // lobes on the body (pecs, lats), and a coarse facet between two columns
@@ -569,41 +621,143 @@ export function buildFighter(spec = {}) {
 
     // Straps: a flat band laid over the trapezius from the front panel to
     // the back one, built in the body's own surface frame so it cannot twist.
+    //
+    // The band is lifted off the skin as it was actually built, not off the
+    // sculpt: in the concave sweep from neck to shoulder the mesh's flat
+    // facets sit outside the true surface, and a strap placed 3 mm off the
+    // sculpt ended up inside the mesh. Every skin vertex under the band's
+    // footprint is tested, arm skin over the deltoid included, and the band
+    // clears the highest of them. Its underside then drops back as a skirt to
+    // just above the skin, so the lift reads as a thick strap, not a gap.
+    const skinNear = [];
+    for (let v = 0; v < b.vertexCount; v++) {
+      if (b.mat[v] !== M.skin) continue;
+      const y = b.pos[v * 3 + 1];
+      if (y > 1.36 && y < 1.64 && Math.abs(b.pos[v * 3]) < 0.30) skinNear.push(b.pos[v * 3], y, b.pos[v * 3 + 2]);
+    }
+    // Torso and neck skin triangles round the shoulders, for casting.
+    const tris = [];
+    for (const part of b.parts) {
+      if (part.mat !== M.skin || part.group !== 'body' || (part.region !== 'body' && part.region !== 'head')) continue;
+      const ix = part.idx;
+      for (let k = 0; k < ix.length; k += 3) {
+        const ya = b.pos[ix[k] * 3 + 1], yb = b.pos[ix[k + 1] * 3 + 1], yc = b.pos[ix[k + 2] * 3 + 1];
+        if (Math.max(ya, yb, yc) < 1.30 || Math.min(ya, yb, yc) > 1.66) continue;
+        for (let q = 0; q < 3; q++) tris.push(b.pos[ix[k + q] * 3], b.pos[ix[k + q] * 3 + 1], b.pos[ix[k + q] * 3 + 2]);
+      }
+    }
+    // Nearest crossing of a ray from inside the body with that skin.
+    const rayHit = (o, dv) => {
+      let best = Infinity;
+      for (let k = 0; k < tris.length; k += 9) {
+        const e1x = tris[k + 3] - tris[k], e1y = tris[k + 4] - tris[k + 1], e1z = tris[k + 5] - tris[k + 2];
+        const e2x = tris[k + 6] - tris[k], e2y = tris[k + 7] - tris[k + 1], e2z = tris[k + 8] - tris[k + 2];
+        const px = dv.y * e2z - dv.z * e2y, py = dv.z * e2x - dv.x * e2z, pz = dv.x * e2y - dv.y * e2x;
+        const det = e1x * px + e1y * py + e1z * pz;
+        if (Math.abs(det) < 1e-12) continue;
+        const inv = 1 / det;
+        const tx = o.x - tris[k], ty = o.y - tris[k + 1], tz = o.z - tris[k + 2];
+        const u = (tx * px + ty * py + tz * pz) * inv;
+        if (u < 0 || u > 1) continue;
+        const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+        const v = (dv.x * qx + dv.y * qy + dv.z * qz) * inv;
+        if (v < 0 || u + v > 1) continue;
+        const t = (e2x * qx + e2y * qy + e2z * qz) * inv;
+        if (t > 1e-4 && t < best) best = t;
+      }
+      return best === Infinity ? 0.1 : best;
+    };
+    const _d = new THREE.Vector3();
+    const clearOf = (p, Nn, reach) => {
+      let top = -1;
+      for (let k = 0; k < skinNear.length; k += 3) {
+        _d.set(skinNear[k] - p.x, skinNear[k + 1] - p.y, skinNear[k + 2] - p.z);
+        const h = _d.dot(Nn);
+        if (h < -0.02) continue;
+        const lat2 = _d.lengthSq() - h * h;
+        if (lat2 < reach * reach && h > top) top = h;
+      }
+      return top;
+    };
     for (const s of [-1, 1]) {
-      const path = [[0.585, 1.418], [0.605, 1.455], [0.74, 1.494], [1.00, 1.518], [1.45, 1.530],
-        [1.90, 1.522], [2.22, 1.502], [2.44, 1.470], [2.51, 1.432]];
+      // The centreline is an arch over the trapezius in a plane nearly
+      // parallel to the body's midline, found by casting rays from inside the
+      // shoulder girdle out to the skin mesh itself: front chest, over the top,
+      // down the back. A path defined round the body's axis instead swung out
+      // over the deltoid at the side and made a plank of the strap.
+      const O = new THREE.Vector3(s * 0.100, 1.37, -0.012);
+      const hitAt = (ang) => {
+        const D = new THREE.Vector3(s * 0.06 * Math.sin(ang), Math.sin(ang), Math.cos(ang)).normalize();
+        return { p: O.clone().addScaledVector(D, rayHit(O, D)), D };
+      };
+      const raw = [];
+      for (let k = 0; k <= 60; k++) raw.push(hitAt(0.15 + (k / 60) * (Math.PI - 0.25)));
+      let i0 = raw.findIndex((r) => r.p.y >= 1.428);
+      let i1 = raw.length - 1;
+      while (i1 > i0 && raw[i1].p.y < 1.436) i1--;
+      const arc = [0];
+      for (let k = i0 + 1; k <= i1; k++) arc.push(arc[arc.length - 1] + raw[k].p.distanceTo(raw[k - 1].p));
       const cen = [];
       for (let i = 0; i <= 22; i++) {
-        const f = (i / 22) * (path.length - 1);
-        const j = Math.min(path.length - 2, Math.floor(f)), t = f - j;
-        const th = s * (path[j][0] + (path[j + 1][0] - path[j][0]) * t);
-        const y = path[j][1] + (path[j + 1][1] - path[j][1]) * t;
-        cen.push({ th, y, p: surf(y, th, 0.0035) });
+        const want = (i / 22) * arc[arc.length - 1];
+        let k = 1;
+        while (k < arc.length - 1 && arc[k] < want) k++;
+        const t = arc[k] > arc[k - 1] ? (want - arc[k - 1]) / (arc[k] - arc[k - 1]) : 0;
+        const A0 = raw[i0 + k - 1], A1 = raw[i0 + k];
+        const p = A0.p.clone().lerp(A1.p, t);
+        const D = A0.D.clone().lerp(A1.D, t).normalize();
+        cen.push({ p, D, y: p.y, th: Math.atan2(p.x, p.z) });
+      }
+      // First pass: a frame and a required lift per sample. The lift is then
+      // smoothed along the strap (a running max, then an average) so a single
+      // tall vertex does not put a kink in the band.
+      const fr = cen.map((q, i) => {
+        const a = cen[Math.max(0, i - 1)].p, c = cen[Math.min(cen.length - 1, i + 1)].p;
+        const T = new THREE.Vector3().subVectors(c, a).normalize();
+        // The cast direction is the band's up: it turns smoothly over the
+        // shoulder, so the band cannot twist.
+        const Nn = q.D.clone();
+        // Narrowest over the shoulder, flaring where it runs into the panel.
+        const e = Math.abs(i / (cen.length - 1) - 0.5) * 2;
+        const hw = 0.017 * (0.92 + 0.45 * Math.pow(e, 6));
+        // Over the top of the shoulder the band rides highest: that is where
+        // the trapezius bunches and the deltoid rolls up under it in a guard.
+        const want = 0.0028 + 0.0034 * (1 - e * e);
+        // No skin under the footprint means the sculpt point itself is the skin.
+        const skinTop = Math.max(0, clearOf(q.p, Nn, hw * 1.2));
+        return { T, Nn, e, hw, skinTop, lift: Math.max(0, skinTop + want) };
+      });
+      const mx = fr.map((f, i) => Math.max(...fr.slice(Math.max(0, i - 2), i + 3).map((g) => g.lift)));
+      const lifts = mx.map((v, i) => (mx[Math.max(0, i - 1)] + v * 2 + mx[Math.min(mx.length - 1, i + 1)]) / 4);
+      // Ease into the panels at both ends, which sit on their own pad.
+      for (let i = 0; i < lifts.length; i++) {
+        const endDist = Math.min(i, lifts.length - 1 - i);
+        const r = smooth01(endDist / 6);
+        lifts[i] = Math.max(fr[i].skinTop + 0.0018, 0.0010 + (lifts[i] - 0.0010) * r);
       }
       const rings2 = [];
       for (let i = 0; i < cen.length; i++) {
-        const a = cen[Math.max(0, i - 1)].p, c = cen[Math.min(cen.length - 1, i + 1)].p;
-        const T = new THREE.Vector3().subVectors(c, a).normalize();
-        const q = cen[i];
-        // Surface normal from four neighbours on the body around this point.
-        const pu = surf(q.y + 0.004, q.th, 0.0035), pd = surf(q.y - 0.004, q.th, 0.0035);
-        const pr = surf(q.y, q.th + 0.03, 0.0035), pll = surf(q.y, q.th - 0.03, 0.0035);
-        const Nn = new THREE.Vector3().crossVectors(pr.clone().sub(pll), pu.clone().sub(pd)).normalize();
-        if (Nn.dot(new THREE.Vector3(Math.sin(q.th), 0.2, Math.cos(q.th))) < 0) Nn.negate();
-        const Bn = new THREE.Vector3().crossVectors(T, Nn).normalize();
-        // Narrowest over the shoulder, flaring where it runs into the panel.
-        const e = Math.abs(i / (cen.length - 1) - 0.5) * 2;
+        const q = cen[i], f = fr[i];
+        const Nn = f.Nn;
+        const Bn = new THREE.Vector3().crossVectors(f.T, Nn).normalize();
         // The end rings collapse onto the panel so the band closes into the
         // vest instead of showing an open tube mouth.
         const endK = (i === 0 || i === cen.length - 1) ? 0.15 : 1;
-        const hw = 0.017 * (0.92 + 0.45 * Math.pow(e, 6)) * (endK < 1 ? 0.8 : 1), th0 = 0.0018 * endK;
+        const hw = f.hw * (endK < 1 ? 0.8 : 1);
+        const lift = lifts[i];
+        const base = q.p.clone().addScaledVector(Nn, lift);
+        const under = Math.max(0.0012, lift - f.skinTop - 0.0010) * endK;
+        const top = 0.0012 * endK + 0.0006;
         const ring = [];
-        const sec = [[-1, 0.2], [-0.6, 0.9], [0, 1], [0.6, 0.9], [1, 0.2], [0.6, -0.8], [0, -1], [-0.6, -0.8]];
-        for (const [x, yy] of sec) ring.push(q.p.clone().addScaledVector(Bn, x * hw).addScaledVector(Nn, yy * th0 - (1 - Math.abs(yy)) * 0.0006 - (1 - endK) * 0.0012));
+        const sec = [[-1, 0.0], [-0.65, 0.85], [0, 1], [0.65, 0.85], [1, 0.0], [0.97, -1], [0, -1.05], [-0.97, -1]];
+        for (const [x, yy] of sec) {
+          const off = yy >= 0 ? yy * top : yy * under;
+          ring.push(base.clone().addScaledVector(Bn, x * hw).addScaledVector(Nn, off - (1 - endK) * 0.0012));
+        }
         rings2.push(ring);
       }
       b.begin(M.tank, { group: 'body', region: 'cloth' });
-      b.addRings(rings2, [0, 0, 1, 1], { evenV: true, flipWinding: s > 0 });
+      b.addRings(rings2, [0, 0, 1, 1], { evenV: true });
     }
   }
 
@@ -762,18 +916,21 @@ export function buildFighter(spec = {}) {
     }
   }
 
+  __T('cloth');
   // ---- hair and beard ----------------------------------------------------
   // Hairlines are tuned as elevation (radians up from the head centre) at a
   // handful of angles round the head: forehead, temple corner, sideburn,
   // over the ear, nape.
-  const hairLine = profile(hairStyle === 'buzz'
+  const hairLine0 = profile(hairStyle === 'buzz'
     ? [[0, 0.80], [0.35, 0.78], [0.62, 0.66], [0.85, 0.64], [1.05, 0.50], [1.18, 0.22], [1.28, 0.02], [1.40, 0.12], [1.55, 0.42], [1.80, 0.42], [2.05, 0.18], [2.40, -0.22], [Math.PI, -0.36]]
     : hairStyle === 'afro'
       ? [[0, 0.74], [0.35, 0.72], [0.62, 0.66], [0.85, 0.62], [1.05, 0.50], [1.18, 0.22], [1.28, 0.00], [1.40, 0.10], [1.55, 0.40], [1.80, 0.40], [2.05, 0.18], [2.40, -0.24], [Math.PI, -0.38]]
       : [[0, 0.80], [0.35, 0.77], [0.60, 0.69], [0.85, 0.66], [1.05, 0.52], [1.18, 0.21], [1.28, -0.03], [1.40, 0.10], [1.55, 0.42], [1.80, 0.42], [2.05, 0.17], [2.40, -0.24], [Math.PI, -0.38]]);
+  // A woman's hairline sits lower and rounder over the forehead.
+  const hairLine = fem ? (th) => hairLine0(th) - 0.08 * Math.exp(-((th / 0.9) ** 2)) : hairLine0;
   const HR = 0.092 * H;   // rough radius of the scalp for turning angles into metres
   const hairFade = hairStyle === 'afro' ? 0.006 : 0.010;
-  const hairDensity = hairStyle === 'buzz' ? 0.80 : 1.0;
+  const hairDensity = 0.98;
   const hairCover = (th, ph, forPaint) => {
     const dist = (ph - hairLine(th)) * HR;
     const w = hairFade * (1 + 0.6 * smooth01((Math.abs(th) - 1.9) / 0.8));
@@ -793,6 +950,9 @@ export function buildFighter(spec = {}) {
         const ramp = smooth01(dist / (hairStyle === 'afro' ? 0.035 : 0.012));
         let t = T;
         if (hairStyle === 'short') t *= 1 + 0.45 * smooth01((ph - 0.5) / 0.7);
+        // A woman's crop carries more length: volume over the crown and
+        // down over the ears and nape, not a clipper line.
+        if (fem && hairStyle === 'short') t *= 1.55 + 0.5 * smooth01((ph - 0.3) / 0.8) + 0.35 * smooth01((Math.abs(th) - 1.3) / 0.8);
         if (hairStyle === 'afro') {
           t *= 1 + 0.45 * smooth01((ph - 0.2) / 0.9) + 0.15 * smooth01((Math.abs(th) - 1.2) / 1.2);
           t += 0.0012 * (Math.sin(th * 17 + lump[0] + ph * 9) * Math.sin(ph * 19 + lump[1]) + 0.6 * Math.sin(th * 29 + lump[2] - ph * 23));
@@ -803,6 +963,17 @@ export function buildFighter(spec = {}) {
     });
     b.begin(M.hair, { group: 'body', region: 'hair' });
     b.addRings(shell.rings, [0, 0, 1, 1], { capEnd: true, capSmooth: true, aux: shell.cover });
+    if (spec.bun) {
+      // Hair pulled back into a low bun: the silhouette that says a fighter
+      // tied it back to fight, readable from across the room.
+      const bc = hc(0, 1.768, -0.128);
+      const bun = new THREE.SphereGeometry(1, 14, 10);
+      const m = new THREE.Matrix4().makeRotationX(-0.5).scale(new THREE.Vector3(0.034 * H, 0.029 * H, 0.030 * H));
+      m.setPosition(bc.x, bc.y, bc.z);
+      b.begin(M.hair, { group: 'body', region: 'hair', aux0: 1 });
+      b.addGeometry(bun, [0, 0, 2, 1], m);
+      bun.dispose();
+    }
   }
 
   // Beard region as elevation bounds per angle. It follows the jaw back to
@@ -816,8 +987,8 @@ export function buildFighter(spec = {}) {
     const bot = smooth01((ph - beardLo(th)) * HR / 0.006 + 0.3);
     const side = smooth01((1.40 - a) / 0.16);
     const e = Math.hypot(th / 0.27, (ph + 0.55) / 0.115);
-    const lips = smooth01((e - 1) / 0.25);
-    return top * bot * side * lips * (forPaint ? 1 : 0.84);
+    const lips = smooth01((e - 1) / 0.14);
+    return top * bot * side * lips * (forPaint ? 1 : 0.97);
   };
   if (spec.beard) {
     const shell = buildShell(sdf, {
@@ -835,6 +1006,7 @@ export function buildFighter(spec = {}) {
     b.addRings(shell.rings, [0, 0, 1, 1], { closed: false, aux: shell.cover });
   }
 
+  __T('hair');
   // ---- bake --------------------------------------------------------------
   const built = b.build();
   const geo = built.geometry;
@@ -881,6 +1053,7 @@ export function buildFighter(spec = {}) {
   BONE_NAMES.forEach((n, i) => { boneIndex[n] = i; });
   computeSkinning(geo, built.groups, groupBones, segments, boneIndex);
   rigidHead(geo, built.groups, boneIndex);
+  clothFollowsSkin(geo, built, M.tank, M.skin, boneIndex);
 
   // Oily zones for the skin shader, from bind positions: forehead and nose,
   // the tops of the shoulders and traps, the upper chest.
@@ -904,6 +1077,7 @@ export function buildFighter(spec = {}) {
     geo.attributes.aux.needsUpdate = true;
   }
 
+  __T('skinning');
   // ---- swelling morphs ---------------------------------------------------
   const regions = built.regions, groups = built.groups;
   const faceC = V3(0, 1.762, 0.045);
@@ -954,18 +1128,31 @@ export function buildFighter(spec = {}) {
   }
   group.updateMatrixWorld(true);
 
+  __T('morph+mesh');
   // ---- surface pass: face, scalp, tattoos ------------------------------
-  const painter = makeHeadPainter(skinSurf.ctx, skinSurf.size, grid, A.head, H);
-  paintFace(painter, {
+  const surfMaps = makeSkinSurfaceCanvases((seed % 97) + 3, skinSurf.size);
+  const painters = makeFacePainters({ albedo: skinSurf, height: surfMaps.height, rough: surfMaps.rough }, grid, A.head, H, sdf);
+  __T('surfcanv+front');
+  const scars = (fc.scars || []).map((k) => {
+    const [kind, sd] = k.split(':');
+    return { kind, side: side(sd) || 1, x: (side(sd) || 1) * 0.029 };
+  });
+  paintFace(painters, {
     skin: skinTone, hair: spec.hair ?? '#231a14', rng,
     stubble: spec.beard ? 0 : (spec.stubble ?? 0.55), beard: !!spec.beard,
     hairCover: hairStyle === 'bald' ? null : hairCover,
     bald: hairStyle === 'bald', baldCover: (th, ph) => hairCover(th, ph, true),
-    beardCover
+    beardCover, ap, fem, furrow: expr.furrow, age: expr.age,
+    fold: face.fold, cleft: face.cleft, scars, scarTissue: fc.scarTissue ?? 0,
+    moles: fc.moles ?? 0, freckles: fc.freckles ?? 0, browBulk: fc.browBulk ?? 0.5
   });
+  __T('paintFace');
+  paintExtremities(skinSurf.ctx, skinSurf.size, earRect, fistRect, skinTone);
+  finishSkinSurface(M.skin, surfMaps);
   if (spec.tattoo) paintTattoos(skinSurf.ctx, skinSurf.size, A, rng, spec.tattoo);
   skinTexture.needsUpdate = true;
 
+  __T('finish');
   const toUv = (x, y, z) => {
     const w = hc(x, y, z);
     const [u, v] = grid.uvOf(w.x, w.y, w.z);
@@ -1004,11 +1191,135 @@ export function buildFighter(spec = {}) {
         for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap']) {
           if (m[k] && m[k] !== skinTexture) m[k].dispose();
         }
+        if (m.userData.poreMap) m.userData.poreMap.dispose();
         m.dispose();
       }
       skeleton.dispose();
     }
   };
+}
+
+
+// Eyeball and wet film for one eye, pole along +z, in eye space. The texture is
+// painted for the right eye (+x toward the temple); the left eye is its mirror,
+// with its triangles turned back round.
+function eyeGeometries(r, s) {
+  const PH = 24, D = Math.PI / 180;
+  const zIris = r * Math.cos(EYE_LIMBUS);
+  const lathe = (angs, place, uvOn) => {
+    const pos = [], uv = [], idx = [];
+    for (let k = 0; k < angs.length; k++) {
+      for (let j = 0; j <= PH; j++) {
+        const phi = (j / PH) * TAU;
+        const [rho, z] = place(angs[k]);
+        pos.push(s * rho * Math.sin(phi), rho * Math.cos(phi), z);
+        uv.push(j / PH, 1 - eyeV(angs[k]));
+      }
+    }
+    for (let k = 0; k < angs.length - 1; k++) {
+      for (let j = 0; j < PH; j++) {
+        const a = k * (PH + 1) + j, b = a + 1, c = a + PH + 1, d = c + 1;
+        if (s > 0) idx.push(a, b, c, b, d, c); else idx.push(a, c, b, b, c, d);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    if (uvOn) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    return g;
+  };
+  // The iris rises a little toward the pupil, as the lens pushes it forward.
+  const ball = lathe([0, 3, 6, 8.5, 11, 14, 18, 22, 26, 29, 30.5, 33, 38, 46, 58, 72, 90, 118].map((a) => a * D), (a) => {
+    if (a <= EYE_LIMBUS) return [r * Math.sin(a), zIris + 0.035 * r * (1 - (a / EYE_LIMBUS) ** 2)];
+    return [r * Math.sin(a), r * Math.cos(a)];
+  }, true);
+  // Cornea: a cap of tighter curvature than the globe, meeting it at the
+  // limbus, then the tear film a hair off the sclera.
+  const e = 0.012 * r, Rc = 0.64 * r;
+  const rl = r * Math.sin(EYE_LIMBUS);
+  const zc = r * Math.cos(EYE_LIMBUS) + e - Math.sqrt(Rc * Rc - rl * rl);
+  const film = lathe([0, 5, 10, 15, 20, 24, 27, 29, 31, 35, 42, 52, 64, 80].map((a) => a * D), (a) => {
+    if (a <= EYE_LIMBUS) { const rho = r * Math.sin(a); return [rho, zc + Math.sqrt(Rc * Rc - rho * rho)]; }
+    return [(r + e) * Math.sin(a), (r + e) * Math.cos(a)];
+  }, false);
+  return [ball, film];
+}
+
+// Upper lashes as a short dark ribbon rooted on the lid margin and swept out
+// and up, longest over the outer half. Real lashes are hundreds of hairs a few
+// pixels long at any distance a fight is seen from; what reads is the dark
+// fringe they make together, and that is what this is.
+function lashRibbon(s, H, ap, fem) {
+  const rows = [[], []];
+  const C = HEAD_C, E = new THREE.Vector3(s * EYE.x, EYE.y, EYE.z);
+  const w = (p) => new THREE.Vector3(p.x * H, C.y + (p.y - C.y) * H, C.z + (p.z - C.z) * H);
+  for (let i = 0; i <= 16; i++) {
+    const xi = -0.94 + (i / 16) * 1.88;
+    const root = lidPoint(s, xi, true, EYE.r + 0.0027, ap);
+    const out = root.clone().sub(E).normalize();
+    const len = (fem ? 0.0024 : 0.0015) * (0.35 + 0.65 * Math.sin(Math.PI * (xi + 1) / 2) ** 0.7) * (1 + 0.25 * Math.max(0, xi));
+    const tip = root.clone().addScaledVector(out, len * 0.75).add(new THREE.Vector3(0, len * 0.55, len * 0.25));
+    rows[0].push(w(root));
+    rows[1].push(w(tip));
+  }
+  return rows;
+}
+
+
+// A garment vertex takes the skin weights of the skin under it, blended over a
+// small neighbourhood. Distance to bone weights a strap 8 mm off the trapezius
+// differently from the trapezius itself, and any shoulder roll then slides one
+// through the other; with the same weights the pair moves as one surface and
+// the gap between them is carried round with it.
+function clothFollowsSkin(geo, built, clothMat, skinMat, boneIndex) {
+  const pos = geo.attributes.position.array;
+  const si = geo.attributes.skinIndex.array, sw = geo.attributes.skinWeight.array;
+  const n = built.vertexCount;
+  const CELL = 0.02;
+  const hash = new Map();
+  const key = (x, y, z) => (Math.floor(x / CELL) * 73856093) ^ (Math.floor(y / CELL) * 19349663) ^ (Math.floor(z / CELL) * 83492791);
+  for (let v = 0; v < n; v++) {
+    if (built.vmat[v] !== skinMat || built.groups[v] !== 'body') continue;
+    const y = pos[v * 3 + 1];
+    if (y < 0.95 || y > 1.64) continue;
+    const k = key(pos[v * 3], y, pos[v * 3 + 2]);
+    if (!hash.has(k)) hash.set(k, []);
+    hash.get(k).push(v);
+  }
+  const acc = new Map();
+  for (let v = 0; v < n; v++) {
+    if (built.vmat[v] !== clothMat) continue;
+    const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL), cz = Math.floor(z / CELL);
+    acc.clear();
+    let total = 0;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+      const list = hash.get(((cx + i) * 73856093) ^ ((cy + j) * 19349663) ^ ((cz + k) * 83492791));
+      if (!list) continue;
+      for (const s of list) {
+        const dx = pos[s * 3] - x, dy = pos[s * 3 + 1] - y, dz = pos[s * 3 + 2] - z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > 0.025 * 0.025) continue;
+        const w = Math.exp(-d2 / (0.008 * 0.008)) + 1e-6;
+        total += w;
+        for (let q = 0; q < 4; q++) {
+          const bw = sw[s * 4 + q];
+          if (bw > 0) acc.set(si[s * 4 + q], (acc.get(si[s * 4 + q]) || 0) + bw * w);
+        }
+      }
+    }
+    if (total <= 0) continue;
+    const list = [...acc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+    let sum = 0;
+    for (const e of list) sum += e[1];
+    for (let q = 0; q < 4; q++) {
+      si[v * 4 + q] = q < list.length ? list[q][0] : 0;
+      sw[v * 4 + q] = q < list.length ? list[q][1] / sum : 0;
+    }
+  }
+  geo.attributes.skinIndex.needsUpdate = true;
+  geo.attributes.skinWeight.needsUpdate = true;
+  void boneIndex;
 }
 
 // The skull and jaw are one rigid piece. Distance weights alone let the chin

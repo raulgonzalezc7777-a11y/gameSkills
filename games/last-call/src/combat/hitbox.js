@@ -13,6 +13,7 @@ import { HURTBOXES } from './moves.js';
 const _a = new THREE.Vector3(), _b = new THREE.Vector3();
 const _c = new THREE.Vector3(), _d = new THREE.Vector3();
 const _ax = new THREE.Vector3(), _rt = new THREE.Vector3(), _up = new THREE.Vector3();
+const _n = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _s = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_X = new THREE.Vector3(1, 0, 0);
@@ -91,6 +92,10 @@ export class HurtboxSet {
 
   // Closest capsule to a swept limb capsule, scored with the per-zone bias so
   // a clean body shot beats a graze on the arm that drifted in front of it.
+  // 'out' receives the contact: halfway through the overlap of the two
+  // surfaces, on the line between the closest points of the two axes. The
+  // old midpoint of the axes put the flash inside the skull whenever the
+  // limb was not dead centre, which is how hit and flash came to disagree.
   query(p0, p1, radius, out) {
     let best = null, bestScore = Infinity;
     for (let i = 0; i < this.capsules.length; i++) {
@@ -98,15 +103,34 @@ export class HurtboxSet {
       const dsq = segDistSq(p0, p1, c.a, c.b, _c, _d);
       const reach = radius + c.r;
       if (dsq > reach * reach) continue;
-      const score = Math.sqrt(dsq) - c.bias;
+      const dist = Math.sqrt(dsq);
+      const score = dist - c.bias;
       if (score < bestScore) {
         bestScore = score;
         best = c;
-        if (out) out.copy(_d).lerp(_c, 0.5);
+        if (out) {
+          if (dist > 1e-5) {
+            _n.copy(_c).sub(_d).multiplyScalar(1 / dist);
+            out.copy(_d).addScaledVector(_n, Math.max(0, (c.r + dist - radius) * 0.5));
+          } else {
+            out.copy(_c);
+          }
+        }
       }
     }
     if (best) best.flash = 1;
     return best;
+  }
+
+  // Point on a capsule's surface facing 'from', for contacts that are
+  // resolved by script (a knee in the clinch, a super beat) rather than by a
+  // swept limb. Still a surface point, so the flash sits on the skin.
+  static surfacePoint(c, from, out) {
+    segDistSq(from, from, c.a, c.b, null, _d);
+    _n.copy(from).sub(_d);
+    const l = _n.length();
+    if (l <= c.r) return out.copy(from);
+    return out.copy(_d).addScaledVector(_n, c.r / l);
   }
 
   center(out) {

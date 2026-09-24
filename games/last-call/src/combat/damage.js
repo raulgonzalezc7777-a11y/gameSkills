@@ -38,6 +38,9 @@ export function computeDamage(attacker, target, move, hurtMul, counter, ctx) {
 // whether the attacker keeps its chain.
 export function resolveContact(attacker, target, move, hurt, point, ctx) {
   if (target.dead) return 'dead';
+  // 'point' is the contact the caller measured (hitbox.js query: where the
+  // limb surface met the hurtbox surface). Copied, never re-derived from the
+  // target's bones, so the flash, the sound and the blood all start there.
   _pt.copy(point);
 
   // Invulnerability first: a dodge that works is a dodge that works, and a
@@ -198,7 +201,14 @@ export function knockback(attacker, target, move, scale) {
   _dir.normalize();
   const mass = target.spec?.bulk ?? 1;
   const lv = levelOf(move);
-  target.velocity.addScaledVector(_dir, (move.push * lv.push * scale) / mass);
+  // The shove rides its own decay rather than velocity, which a stunned
+  // target's footing damped to nothing in a couple of frames: strings then
+  // walked the attacker into the defender instead of driving them back.
+  const out = target.shove || target.velocity;
+  out.addScaledVector(_dir, (move.push * lv.push * scale) / mass);
+  // Same beat as the reaction pose: the body stays on the fist for the
+  // frozen contact frame, then goes.
+  if (target.shove) target.shoveHold = TUNE.shoveOnset;
 }
 
 // Per-limb consequences, read by the fighter every frame. Kept here so the

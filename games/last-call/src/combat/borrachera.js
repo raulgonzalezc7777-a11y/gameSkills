@@ -3,6 +3,7 @@ import { bus, EV } from '../core/events.js';
 import { hashString } from '../core/rng.js';
 import { MOVES, TUNE, buzzTier } from './moves.js';
 import { resolveContact } from './damage.js';
+import { HurtboxSet } from './hitbox.js';
 
 // The Borrachera. Full hype buys one scripted, invulnerable sequence that no
 // sober person would try. It is the only place in the game where the fighter
@@ -153,7 +154,11 @@ export class Borrachera {
     if (!hurt) return;
     _v.copy(opponent.position).sub(f.position).setY(0);
     if (_v.length() > move.reach + 1.2) return; // they got away, which is allowed
-    _pt.copy(hurt.a).lerp(hurt.b, 0.5);
+    // The flash belongs on the skin facing the limb that struck, not inside
+    // the target's chest.
+    const limb = f.rig?.bones?.[move.limb];
+    if (limb) HurtboxSet.surfacePoint(hurt, limb.getWorldPosition(_pt), _pt);
+    else _pt.copy(hurt.a).lerp(hurt.b, 0.5);
     const res = resolveContact(f, opponent, move, hurt, _pt, ctx);
     if (res !== 'dodge' && res !== 'grace' && res !== 'dead') this.hits++;
     bus.emit(EV.HITSTOP, beat.finish ? 0.16 : 0.08);

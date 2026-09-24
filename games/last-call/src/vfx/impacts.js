@@ -33,9 +33,23 @@ export class Impacts {
     const col = o.color;
 
     // The flash sits just past the contact point along the punch, so it backs
-    // the head being hit instead of covering it, and it stays small: the
-    // receiver's reaction is the read, the flash only punctuates it.
-    const px2 = px + dx * 0.15, py2 = py + dy * 0.15, pz2 = pz + dz * 0.15;
+    // the fist instead of covering it, and it stays small: the receiver's
+    // reaction is the read, the flash only punctuates it. The contact is now
+    // the true skin contact (hitbox.js), so the push is a few centimetres:
+    // the old 15 cm was sized for a contact that sat near the middle of the
+    // head, and from the skin it buried the flash inside the skull where the
+    // depth test hid it.
+    // It also leans toward the camera by a hand's width: the fist is sitting
+    // exactly on the contact, and a depth tested flash behind it was hidden
+    // by the very punch it was meant to punctuate.
+    const PUSH = 0.04, LEAN = 0.10;
+    let px2 = px + dx * PUSH, py2 = py + dy * PUSH, pz2 = pz + dz * PUSH;
+    const cam = this.vfx.camera?.position;
+    if (cam) {
+      const cx = cam.x - px2, cy = cam.y - py2, cz = cam.z - pz2;
+      const cl = Math.hypot(cx, cy, cz);
+      if (cl > LEAN * 3) { px2 += (cx / cl) * LEAN; py2 += (cy / cl) * LEAN; pz2 += (cz / cl) * LEAN; }
+    }
     reset();
     S.x = px2; S.y = py2; S.z = pz2;
     S.life = 0.09 + power * 0.035;

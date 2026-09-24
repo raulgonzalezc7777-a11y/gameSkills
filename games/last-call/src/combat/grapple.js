@@ -4,6 +4,7 @@ import { clamp01 } from '../core/math.js';
 import { rng } from '../core/rng.js';
 import { MOVES, TUNE, buzzTier } from './moves.js';
 import { resolveContact } from './damage.js';
+import { HurtboxSet } from './hitbox.js';
 
 // The clinch. G with nothing to pick up and an opponent inside arm's length
 // grabs them: the holder can knee, the held fighter mashes out. It is the
@@ -102,7 +103,10 @@ function kneeFrom(f, p, ctx) {
   f.poseSafe('uppercut');
   const hurt = hurtFor(p, 'torso');
   if (!hurt) return;
-  _pt.copy(hurt.a).lerp(hurt.b, 0.5);
+  // The contact is the belly surface in front of the knee, not the spine.
+  const knee = f.rig?.bones?.shinL;
+  if (knee) HurtboxSet.surfacePoint(hurt, knee.getWorldPosition(_v), _pt);
+  else _pt.copy(hurt.a).lerp(hurt.b, 0.5);
   f.noteMove(move.name);
   resolveContact(f, p, move, hurt, _pt, ctx);
 }
@@ -113,7 +117,9 @@ export function tossFrom(f, p, ctx) {
   f.poseSafe('hook');
   const hurt = hurtFor(p, 'torso');
   if (!hurt) return;
-  _pt.copy(hurt.a).lerp(hurt.b, 0.5);
+  const hand = f.rig?.bones?.handR;
+  if (hand) HurtboxSet.surfacePoint(hurt, hand.getWorldPosition(_v), _pt);
+  else _pt.copy(hurt.a).lerp(hurt.b, 0.5);
   f.noteMove(move.name);
   // A toss is a guaranteed trip to the floor, so it resolves the contact and
   // then puts them down regardless of the knockdown roll.
