@@ -4,23 +4,27 @@ import { input } from '../core/input.js';
 // and a thumb cluster of big buttons on the right. Everything is fed into the
 // same input object the keyboard uses, so gameplay never knows the difference.
 
+// Six buttons, not ten: a phone has room for thumbs, not for a keyboard. The
+// punch button is the whole boxing kit; tapping it in rhythm walks the combo
+// from jab to cross to hook to uppercut, and a pause starts it over.
 const BUTTONS = [
-  // [label, key code, css slot, hold?]
-  ['PUÑO', 'KeyJ', 'b-jab'],
-  ['FUERTE', 'KeyK', 'b-cross'],
-  ['GANCHO', 'KeyU', 'b-hook'],
-  ['UPPER', 'KeyI', 'b-upper'],
+  // [label, key code, css slot, sub-label]
+  ['GOLPE', 'combo', 'b-punch', 'toca seguido'],
   ['PATADA', 'KeyL', 'b-kick'],
-  ['BLOQ', 'Space', 'b-block', true],
-  ['ESQUIVA', 'KeyC', 'b-dodge'],
-  ['AGARRA', 'KeyG', 'b-grab'],
+  ['BLOQUEO', 'Space', 'b-block', 'mantén'],
   ['BEBER', 'KeyE', 'b-drink'],
-  ['¡BORRACHERA!', 'KeyF', 'b-special']
+  ['AGARRAR', 'KeyG', 'b-grab'],
+  ['ESQUIVAR', 'KeyC', 'b-dodge']
 ];
+const COMBO = ['KeyJ', 'KeyK', 'KeyU', 'KeyI'];
+const COMBO_GAP = 0.75;   // seconds between taps that still count as one combo
 
 export function wantsTouch() {
   try {
-    return matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    // A phone or tablet: the main pointer is a finger and nothing hovers. A
+    // laptop with a touch screen still has a fine pointer, so it keeps the
+    // keyboard layout until it is actually touched.
+    return matchMedia('(hover: none) and (pointer: coarse)').matches;
   } catch { return false; }
 }
 
@@ -32,14 +36,16 @@ export class TouchControls {
     root.className = 'touch';
     root.innerHTML = `
       <div class="t-stickzone"><div class="t-base"><div class="t-knob"></div></div></div>
-      <div class="t-pad">${BUTTONS.map(([label, code, slot]) =>
-        `<button class="t-btn ${slot}" data-code="${code}" aria-label="${label}">${label}</button>`).join('')}</div>
+      <div class="t-pad">${BUTTONS.map(([label, code, slot, sub]) =>
+        `<button class="t-btn ${slot}" data-code="${code}" aria-label="${label}">${label}${sub ? `<small>${sub}</small>` : ''}</button>`).join('')}</div>
+      <button class="t-special" data-code="KeyF" aria-label="Borrachera">¡BORRACHERA!<small>toca ya</small></button>
       <button class="t-pause" aria-label="Pausa">II</button>`;
     parent.appendChild(root);
     this.root = root;
     this.base = root.querySelector('.t-base');
     this.knob = root.querySelector('.t-knob');
-    this.special = root.querySelector('.b-special');
+    this.special = root.querySelector('.t-special');
+    this._combo = 0; this._comboT = -9;
 
     const zone = root.querySelector('.t-stickzone');
     let id = null, ox = 0, oy = 0;
@@ -85,9 +91,20 @@ export class TouchControls {
     zone.addEventListener('pointerup', end);
     zone.addEventListener('pointercancel', end);
 
-    for (const btn of root.querySelectorAll('.t-btn')) {
-      const code = btn.dataset.code;
-      const down = (e) => { e.preventDefault(); btn.classList.add('down'); input.virtualPress(code); navigator.vibrate?.(8); };
+    for (const btn of root.querySelectorAll('.t-btn, .t-special')) {
+      let code = btn.dataset.code;
+      const down = (e) => {
+        e.preventDefault();
+        btn.classList.add('down');
+        if (btn.dataset.code === 'combo') {
+          const now = performance.now() / 1000;
+          this._combo = now - this._comboT < COMBO_GAP ? (this._combo + 1) % COMBO.length : 0;
+          this._comboT = now;
+          code = COMBO[this._combo];
+        }
+        input.virtualPress(code);
+        navigator.vibrate?.(8);
+      };
       const up = (e) => { e.preventDefault(); btn.classList.remove('down'); input.virtualRelease(code); };
       btn.addEventListener('pointerdown', down);
       btn.addEventListener('pointerup', up);

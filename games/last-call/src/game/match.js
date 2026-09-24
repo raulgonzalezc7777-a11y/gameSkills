@@ -36,6 +36,7 @@ export class Match {
 
     // Physics comedy: both fighters become active ragdolls in one world.
     this.brawl = new Brawl(this.arena, [this.player, this.cpu]);
+    this.brawl.debris.camera = ctx.camera;
 
     this.brain = new Brain(this.cpu, this.player, 0.65);
     this.tpcam = new TPCamera(ctx.camera, { arena: this.arena });
@@ -98,6 +99,7 @@ export class Match {
       // Attract mode: orbit the empty ring so the title screen is alive.
       this.tpcam.yaw += dt * 0.12;
       this.tpcam.update(dt, { x: 0, y: 0 });
+      this.arena.crowd?.uniforms?.uCam?.value.copy(this.tpcam.camera.position);
       this.player.update(dt, { moveX: 0, moveY: 0 }, this.cpu);
       this.cpu.update(dt, { moveX: 0, moveY: 0 }, this.player);
       this.brawl.step(dt);
@@ -138,6 +140,7 @@ export class Match {
     this.ghost.r = expDamp(this.ghost.r, this.cpu.health, 1.6, dt);
 
     this.tpcam.update(dt, { x: input.state.lookX, y: input.state.lookY });
+    this.arena.crowd?.uniforms?.uCam?.value.copy(this.tpcam.camera.position);
   }
 
   // Distance between the fighters is what the depth of field should focus on.

@@ -86,5 +86,8 @@ export const QUALITY_PRESETS = {
   cinematic: { pixelRatio: 2, shadowMapSize: 4096, ssao: true, ssr: true, motionBlur: true, dof: true, particleBudget: 20000, crowd: 160 },
   high:      { pixelRatio: 1.5, shadowMapSize: 2048, ssao: true, ssr: true, motionBlur: true, dof: true, particleBudget: 12000, crowd: 190 },
   medium:    { pixelRatio: 1, shadowMapSize: 1024, ssao: true, ssr: true, motionBlur: false, dof: true, particleBudget: 6000, crowd: 120 },
+  // Phones: a sharp picture (the screen is small and close to the eye) with
+  // every fullscreen pass that costs a phone its frame rate turned off.
+  phone:     { pixelRatio: 1.5, shadowMapSize: 1024, ssao: false, ssr: false, motionBlur: false, dof: false, particleBudget: 3000, crowd: 70 },
   low:       { pixelRatio: 0.75, shadowMapSize: 512,  ssao: false, ssr: false, motionBlur: false, dof: false, particleBudget: 2500, crowd: 24 }
 };

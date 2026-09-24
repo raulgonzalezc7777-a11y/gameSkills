@@ -241,6 +241,7 @@ uniform float uBeat;
 uniform float uTime;
 uniform float uExcite;
 uniform float uSurge;
+uniform vec3 uCam;
 
 // Rotation about the shoulder: 'raise' lifts the arm out to the side, 'swing'
 // pumps it forward and back. Returned as a matrix so the normal pass can reuse
@@ -276,6 +277,12 @@ const POSITION_HOOK = /* glsl */`
   transformed.x += sin(uBeat * 1.57079633 + cPhase) * aBody.x * cUp;
   transformed.z += cos(uBeat * 1.04719755 + cPhase * 1.7) * aBody.x * 0.6 * cUp;
   transformed.y += cLift;
+  // Anyone standing right in front of the lens ducks out of the shot:
+  // punters within a metre and a half of the camera shrink to nothing, so the
+  // camera never films the fight through the back of someone's head.
+  vec2 cWho = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz;
+  float cNear = smoothstep(0.9, 1.7, distance(cWho, uCam.xz));
+  transformed *= cNear;
 `;
 
 const COLOR_HOOK = /* glsl */`
@@ -312,7 +319,7 @@ export class Crowd {
       normalMap: weave, normalScale: new THREE.Vector2(0.32, 0.32)
     });
     this.uniforms = {
-      uBeat: { value: 0 }, uTime: { value: 0 }, uExcite: { value: 0 }, uSurge: { value: 0 }
+      uBeat: { value: 0 }, uTime: { value: 0 }, uExcite: { value: 0 }, uSurge: { value: 0 }, uCam: { value: new THREE.Vector3(0, 0, 99) }
     };
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);

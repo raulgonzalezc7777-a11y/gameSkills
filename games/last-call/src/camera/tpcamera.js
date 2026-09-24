@@ -56,21 +56,46 @@ export class TPCamera {
     const duelYaw = Math.atan2(_dir.x, _dir.z);
     const off = CFG.camera.orbitOffset;
     const yA = duelYaw + Math.PI + off, yB = duelYaw + Math.PI - off;
-    const dA = Math.abs(wrapAngle(yA - this.yaw)), dB = Math.abs(wrapAngle(yB - this.yaw));
+    // Each side is also scored on where the camera would stand: a side that
+    // puts the lens out past the ropes and into the crowd (the fight is up
+    // against the ropes on that side) costs extra, so the camera swings round
+    // to the open side instead of filming through a wall of heads.
+    const lim = (this.arena?.ropeRadius ?? 6) - 0.4;
+    const standCost = (yaw) => {
+      const px = _mid.x + Math.sin(yaw) * this.dist, pz = _mid.z + Math.cos(yaw) * this.dist;
+      return Math.max(0, Math.hypot(px, pz) - lim) * 3;
+    };
+    const dA = Math.abs(wrapAngle(yA - this.yaw)) + standCost(yA), dB = Math.abs(wrapAngle(yB - this.yaw)) + standCost(yB);
     if (this._side === undefined) this._side = dA <= dB ? 1 : -1;
     else if (this._side === 1 && dB + 0.6 < dA) this._side = -1;
     else if (this._side === -1 && dA + 0.6 < dB) this._side = 1;
     const wantYaw = this._side === 1 ? yA : yB;
     this.yaw = dampAngle(this.yaw, wantYaw, 3.2, dt) + lookInput.x * dt * 2.4;
-    this.pitch = clamp(expDamp(this.pitch, CFG.camera.pitch, 2, dt) + lookInput.y * dt * 1.6, -0.2, 0.6);
+    // Upright phones look down on the fight a little more, which spends the
+    // tall frame on floor and bodies rather than on the ceiling.
+    const wantPitch = (this.camera.aspect || 1.6) < 1 ? CFG.camera.pitch + 0.05 : CFG.camera.pitch;
+    this.pitch = clamp(expDamp(this.pitch, wantPitch, 2, dt) + lookInput.y * dt * 1.6, -0.2, 0.6);
 
     // Pull back as the fighters separate or one goes airborne, so a launch is
     // a wide shot of the whole arc rather than two bodies leaving frame.
     const air = Math.max(0, Math.max(_a.y, _b.y) - 1.6);
-    const wantDist = clamp(CFG.camera.distance + sep * 0.62 + air * 1.2, CFG.camera.distance, 10.5);
-    this.dist = expDamp(this.dist, wantDist, 3.2, dt);
-    const wantFov = CFG.camera.fov + clamp(sep * 0.8, 0, 8);
+    let wantFov = CFG.camera.fov + clamp(sep * 0.8, 0, 8);
+    // Narrow screens (a phone held upright) keep a usable horizontal view:
+    // the vertical angle opens up until the frame is at least as wide as a
+    // 4:3 one would be, capped before the lens starts to bend faces, and
+    // whatever width is still missing comes from pulling back.
+    const aspect = this.camera.aspect || 1.6;
+    const minAspect = 0.95;
+    if (aspect < minAspect) {
+      const t = Math.tan(THREE.MathUtils.degToRad(wantFov) / 2) * minAspect / aspect;
+      wantFov = Math.min(88, THREE.MathUtils.radToDeg(2 * Math.atan(t)));
+    }
     this.fov = expDamp(this.fov, wantFov, 4.0, dt);
+    const hTan = Math.tan(THREE.MathUtils.degToRad(this.fov) / 2) * aspect;
+    const need = (sep * 0.5 + 0.9) / Math.max(0.2, hTan);
+    const wantDist = clamp(Math.max(CFG.camera.distance + sep * 0.62 + air * 1.2, need), CFG.camera.distance, 10.5);
+    this.dist = expDamp(this.dist, wantDist, 3.2, dt);
+
 
     if (this.override) {
       const o = this.override;

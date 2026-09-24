@@ -29,7 +29,11 @@ camera.position.set(0, 2.2, 7);
 // Quality is selectable from the URL so the automated review harness can
 // capture the same scene at a cost software rendering can actually afford.
 const qsBoot = new URLSearchParams(location.search);
-const quality = QUALITY_PRESETS[qsBoot.get('q')] || QUALITY_PRESETS.high;
+// Phones and tablets are the main target: they boot on the phone preset and
+// get the on-screen controls, everything else boots high and steps down.
+const isTouch = wantsTouch() || qsBoot.has('touch');
+const bootName = QUALITY_PRESETS[qsBoot.get('q')] ? qsBoot.get('q') : (isTouch ? 'phone' : 'high');
+const quality = QUALITY_PRESETS[bootName];
 if (quality.shadowMapSize) CFG.render.shadowMapSize = quality.shadowMapSize;
 const ctx = { scene, renderer, camera, quality };
 
@@ -51,9 +55,17 @@ hud._debug = qsBoot.has('debug');
 const touch = new TouchControls().mount(document.getElementById('ui-root'), {
   onPause: () => { if (started) hud.setPaused(!hud.paused); }
 });
-let touchMode = wantsTouch() || qsBoot.has('touch');
+let touchMode = isTouch;
 const markTouch = () => document.documentElement.classList.add('touch-device');
 if (touchMode) markTouch();
+// A buzz in the hand for every blow: short when you land one, longer when
+// you take one, a long rumble for a knockout.
+const buzz = (p) => { if (touchMode) try { navigator.vibrate?.(p); } catch { /* unsupported */ } };
+bus.on(EV.HIT_LANDED, (p) => {
+  if (p.target === match.player) buzz(p.damage >= 9 ? 45 : 25);
+  else if (p.attacker === match.player) buzz(p.damage >= 9 ? 22 : 10);
+});
+bus.on(EV.KO, () => buzz([80, 40, 140]));
 window.addEventListener('touchstart', () => { if (!touchMode) { touchMode = true; markTouch(); if (started) touch.show(true); } }, { passive: true });
 
 // Effects listen to the event bus, so combat never calls them directly.
@@ -73,8 +85,8 @@ audio.setListener(camera);
 // Live quality. Everything the post stack does can be switched per frame, and
 // render resolution is the biggest lever of all, so a player on a laptop is
 // never stuck with a preset chosen for a desktop card.
-const QUALITY_ORDER = ['low', 'medium', 'high', 'cinematic'];
-let qualityName = QUALITY_PRESETS[qsBoot.get('q')] ? qsBoot.get('q') : 'high';
+const QUALITY_ORDER = isTouch ? ['low', 'phone', 'medium', 'high', 'cinematic'] : ['low', 'medium', 'high', 'cinematic'];
+let qualityName = bootName;
 const autoQuality = !qsBoot.has('q');
 
 function applyQuality(name) {
@@ -96,7 +108,7 @@ hud.onQualityPick((q) => {
   // 'auto' keeps the step-down watchdog on; a manual pick turns it off, since
   // the player has just told us what they want.
   autoPicked = q === 'auto';
-  applyQualityFromMenu(q === 'auto' ? 'high' : q);
+  applyQualityFromMenu(q === 'auto' ? (isTouch ? 'phone' : 'high') : q);
 });
 function applyQualityFromMenu(name) {
   applyQuality(name);
@@ -106,6 +118,10 @@ function applyQualityFromMenu(name) {
 function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
+  // On an upright phone the controls own the bottom third of the glass, so
+  // the picture's centre is lifted to sit in the part the thumbs leave clear.
+  if (isTouch && w < h) camera.setViewOffset(w, h, 0, Math.round(h * 0.1), w, h);
+  else camera.clearViewOffset();
   camera.updateProjectionMatrix();
   resize(w, h);
   post.setSize(w, h);
@@ -122,6 +138,11 @@ function start(fromGesture) {
   hud.start();
   match.begin();
   touch.show(touchMode);
+  // On a phone, take the whole screen if the page is allowed to. Embedded
+  // pages often are not, and the game plays the same either way.
+  if (fromGesture && touchMode) {
+    try { document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })?.catch?.(() => {}); } catch { /* not allowed here */ }
+  }
   // Pointer lock only ever succeeds inside a real user gesture. Asking for it
   // anywhere else throws, which would pollute every automated capture log with
   // an error that is not a bug.

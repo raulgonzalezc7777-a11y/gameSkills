@@ -139,7 +139,15 @@ export class Debris {
 
     LAYOUT.forEach((spec, i) => {
       const mesh = this.kit.make[spec.type](i);
-      mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      // Each item owns its materials so it can fade on its own when it sits
+      // between the camera and the fight (see fade()).
+      mesh.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = true; o.receiveShadow = true;
+        o.material = o.material.clone();
+        o.material.transparent = true;
+        o.material.userData.baseOpacity = o.material.opacity;
+      });
       this.group.add(mesh);
       const body = buildBody(spec.type, this.mat);
       const item = { i, spec, type: spec.type, mesh, body, alive: true, respawn: 0, toucher: null, touchT: -9, hitCd: 0, clinkT: 0, prev: new THREE.Vector3() };
@@ -226,10 +234,31 @@ export class Debris {
       if (p.y < this.floorY - 2 || Math.hypot(p.x, p.z) > this.physics.ringRadius + 1.5) this.place(it, it.spec, 1.5);
     }
 
+    if (this.camera) this.fade(dt);
     for (const h of this._hits) this.hit(h);
     this._hits.length = 0;
     for (const it of this._breaks) this.shatter(it);
     this._breaks.length = 0;
+  }
+
+  // A stool a metre from the lens fills half a phone screen. Anything close
+  // to the camera turns to glass so it never hides the fight.
+  fade(dt) {
+    const c = this.camera.position;
+    for (const it of this.items) {
+      if (!it.alive) continue;
+      const d = it.mesh.position.distanceTo(c);
+      const want = Math.min(1, Math.max(0.12, (d - 2.2) / 1.6));
+      it.alpha = it.alpha === undefined ? want : it.alpha + (want - it.alpha) * Math.min(1, dt * 8);
+      if (Math.abs((it._shownAlpha ?? -1) - it.alpha) < 0.01) continue;
+      it._shownAlpha = it.alpha;
+      it.mesh.traverse((o) => {
+        if (!o.isMesh) return;
+        o.material.opacity = o.material.userData.baseOpacity * it.alpha;
+        o.material.depthWrite = it.alpha > 0.95;
+        o.castShadow = it.alpha > 0.5;
+      });
+    }
   }
 
   hit({ item, victim, by, speed }) {

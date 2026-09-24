@@ -72,7 +72,14 @@ export class HUD {
         <div class="panel">
           <h2>PAUSA</h2>
           <button id="resume" class="big">Seguir peleando</button>
-          <div class="controls-grid">
+          <div class="touch-help t-only">
+            <span><b>Joystick</b> moverte (a fondo corres)</span>
+            <span><b>GOLPE</b> toca seguido para el combo</span>
+            <span><b>BLOQUEO</b> mantén pulsado</span>
+            <span><b>BEBER</b> más fuerza, menos equilibrio</span>
+            <span><b>¡BORRACHERA!</b> sale cuando el público se vuelve loco</span>
+          </div>
+          <div class="controls-grid k-only">
             <span><i class="key">W A S D</i>Moverse</span><span><i class="key">Shift</i>Correr</span>
             <span><i class="key">J</i>Directo</span><span><i class="key">K</i>Cruzado</span>
             <span><i class="key">U</i>Gancho</span><span><i class="key">I</i>Uppercut</span>
@@ -102,8 +109,12 @@ export class HUD {
             <button data-q="auto" class="on">Auto</button>
             <button data-q="low">Baja</button>
             <button data-q="medium">Media</button>
-            <button data-q="high">Alta</button>
-            <button data-q="cinematic">Cine</button>
+            <button data-q="high" class="k-only">Alta</button>
+            <button data-q="cinematic" class="k-only">Cine</button>
+          </div>
+          <div class="touch-help t-only">
+            <span><b>Joystick</b> moverte</span><span><b>GOLPE</b> toca seguido: combo</span>
+            <span><b>BEBER</b> más fuerza, menos equilibrio</span>
           </div>
           <div class="controls">
             <span><i class="key">WASD</i>Moverse</span><span><i class="key">J K U I</i>Puños</span>
@@ -255,6 +266,9 @@ export class HUD {
       this._topBottom = this.els.top ? this.els.top.getBoundingClientRect().bottom : 90;
     }
     const floor = this._topBottom + 36;
+    // ...and nothing sinks under the thumbs on a phone.
+    const touch = document.documentElement.classList.contains('touch-mode');
+    const ceil = touch ? (w < h ? h * 0.62 : h - 170) : h - 80;
     // Project every live word, then settle them oldest first: a newer word
     // that lands on an older one climbs above it (or drops below it when the
     // scoreboard is in the way), so a flurry reads as a stack, never a smudge.
@@ -276,7 +290,7 @@ export class HUD {
       el.style.display = 'block';
       live.push({ el, k, scale, hw, hh,
         x: Math.min(w - hw, Math.max(hw, (_v.x * 0.5 + 0.5) * w)),
-        y: Math.max(floor, (-_v.y * 0.5 + 0.5) * h) });
+        y: Math.min(Math.max(floor, ceil), Math.max(floor, (-_v.y * 0.5 + 0.5) * h)) });
     }
     live.sort((p, q) => p.el._born - q.el._born);
     for (let i = 0; i < live.length; i++) {
