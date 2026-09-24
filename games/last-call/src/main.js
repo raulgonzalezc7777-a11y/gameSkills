@@ -38,6 +38,13 @@ if (quality.shadowMapSize) CFG.render.shadowMapSize = quality.shadowMapSize;
 const ctx = { scene, renderer, camera, quality };
 
 const match = new Match(ctx);
+// A thumb on glass is slower and less exact than a keyboard, so the bartender
+// who fights you on a phone is a touch slower to react and to swing.
+if (isTouch && match.brain) {
+  match.brain.diff = 0.5;
+  match.brain.reaction = 0.34 - 0.5 * 0.18 + 0.06;
+  match.brain.aggression *= 0.85;
+}
 // Individual passes can be switched off from the URL (?off=ssao,ssr,dof,mb,bloom)
 // so a bad frame can be bisected instead of guessed at.
 const off = new Set((qsBoot.get('off') || '').split(',').filter(Boolean));

@@ -31,8 +31,11 @@ const fonts = FACES.map(([family, weight, file]) => {
   return `@font-face{font-family:'${family}';font-style:normal;font-weight:${weight};font-display:swap;src:url(data:font/woff2;base64,${b64}) format('woff2');}`;
 }).join('\n');
 
-const page = `<title>LAST CALL</title>
-<meta name="description" content="A third-person drunken bar brawl that runs entirely in the browser." />
+const page = `<meta charset="utf-8" />
+<title>LAST CALL</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<meta name="theme-color" content="#05060a" />
+<meta name="description" content="Pelea de bar con físicas de borracho, pensada para jugar en el móvil." />
 <style>
 ${fonts}
 :root{color-scheme:dark;background:#05060a}
