@@ -62,6 +62,7 @@ export const CFG = {
 
 // The physics comedy. Every number here is a dial on how silly the fight is.
 export const BRAWL = {
+  whiffSpin: 2.2, burpLean: 26,
   drunkWeakness: 0.62,     // share of muscle lost at full buzz
   looseLimbs: 0.55,        // arms and head run softer, so they swing and bobble
   punchTense: 4.2,

@@ -448,6 +448,29 @@ const SOUNDS = {
 
   // Three glugs and a swallow. The rising pitch per glug is the bottle
   // emptying, which is the only cue that says drink rather than splash.
+  // A drunk's hiccup: a clipped glottal yelp that jumps up in pitch.
+  hiccup: {
+    bus: 'voice', gain: 0.85, dur: 0.3,
+    build: (K, d, t, o) => {
+      const shift = (o.shift ?? 1) * (0.92 + K.r() * 0.16);
+      K.tone(d, t, { type: 'triangle', f0: 260 * shift, f1: 540 * shift, d: 0.07, fTime: 0.05, peak: 0.34, a: 0.003 });
+      K.noise(d, t, { type: 'bandpass', f0: 1500 * shift, Q: 5, peak: 0.16, a: 0.002, d: 0.035 });
+      return 0.14;
+    }
+  },
+  // The chug's punchline: a long wobbling belch.
+  burp: {
+    bus: 'voice', gain: 0.9, dur: 0.9,
+    build: (K, d, t, o) => {
+      const shift = (o.shift ?? 1) * (0.9 + K.r() * 0.2);
+      for (let i = 0; i < 5; i++) {
+        const gt = t + i * 0.11;
+        K.tone(d, gt, { type: 'sawtooth', f0: (92 - i * 5) * shift, f1: (78 - i * 5) * shift, d: 0.13, fTime: 0.1, peak: 0.2, a: 0.01 });
+      }
+      K.noise(d, t, { type: 'lowpass', f0: 420 * shift, Q: 2, peak: 0.14, a: 0.02, d: 0.6 });
+      return 0.75;
+    }
+  },
   gulp: {
     bus: 'voice', gain: 0.9, dur: 0.56,
     build: (K, d, t, o) => {

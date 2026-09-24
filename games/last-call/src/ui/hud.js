@@ -193,6 +193,9 @@ export class HUD {
     });
     bus.on('brawl:hiccup', (p) => this.pop('¡HIC!', this.headPoint(p.fighter, _v), 'm', '#ffd35a'));
     bus.on('brawl:fell', (p) => this.pop('¡SE CAYÓ SOLO!', this.headPoint(p.fighter, _v), 'l', '#ffa53d'));
+    bus.on('brawl:whiff', (p) => this.pop(rng.pick(['¡AL AIRE!', '¡FALLÓ!', '¡UY!']), this.headPoint(p.fighter, _v), 'm', '#c9b6ff'));
+    bus.on('brawl:burp', (p) => this.pop('¡BUAAARGH!', this.headPoint(p.fighter, _v), 'l', '#9dff6a'));
+    bus.on('brawl:clonk', (p) => this.pop(p.type === 'bottle' ? '¡CRASH!' : '¡CLONK!', this.headPoint(p.fighter, _v), 'l', '#ffb03d'));
     bus.on('brawl:launch', (p) => this.pop('¡A VOLAR!', this.headPoint(p.fighter, _v), 'l', '#ff2a6d'));
     bus.on(EV.DRINK, (p) => p?.fighter && this.pop('¡GLUP GLUP!', this.headPoint(p.fighter, _v), 'm', '#f0a91e'));
     bus.on(EV.COMBO, ({ fighter, count }) => this.showCombo(this.sideOf(fighter), count));

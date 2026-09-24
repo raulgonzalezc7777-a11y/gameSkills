@@ -99,6 +99,7 @@ export class ActiveRagdoll {
         collisionFilterMask: GROUP.WORLD | other | GROUP.PROP
       });
       body.addShape(new CANNON.Box(new CANNON.Vec3(hw, len * 0.5, hd)));
+      body.fighter = this.f;
       body.position.set(centre.x, centre.y, centre.z);
       body.quaternion.set(q.x, q.y, q.z, q.w);
       w.addBody(body);
@@ -215,6 +216,27 @@ export class ActiveRagdoll {
     best.body.applyImpulse(_cv, _cv2);
     _cv.scale(0.5, _cv);
     this.chest.body.applyImpulse(_cv, this.chest.body.position);
+  }
+
+  // A drunk's haymaker that meets nothing: the torso keeps turning after the
+  // fist and the body corkscrews after it.
+  spin(dirX, dirZ, power) {
+    if (!this.built) return;
+    const sign = rng.chance(0.5) ? 1 : -1;
+    for (const s of [this.pelvis, this.byName.belly, this.chest, this.head].filter(Boolean)) {
+      s.body.angularVelocity.y += sign * power * 5;
+      s.body.velocity.x += dirX * power * 1.6;
+      s.body.velocity.z += dirZ * power * 1.6;
+    }
+    this.hurt(0.25 + power * 0.5);
+  }
+
+  // Leans the top half back by a shove at the chest, for a belch or a stagger.
+  lean(dx, dz, power) {
+    if (!this.built) return;
+    _cv.set(dx * power, 0.2 * power, dz * power);
+    this.chest.body.applyImpulse(_cv, this.chest.body.position);
+    if (this.head) this.head.body.applyImpulse(_cv.scale(0.4, _cv), this.head.body.position);
   }
 
   // --- the per-step motor pass ------------------------------------------------

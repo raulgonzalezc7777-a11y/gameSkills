@@ -124,7 +124,7 @@ export class PostFX {
       vertexShader: FS_VERT,
       fragmentShader: frag,
       uniforms,
-      defines,
+      defines: defines || {},
       depthTest: false,
       depthWrite: false
     });

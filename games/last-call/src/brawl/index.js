@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BrawlWorld, GROUP } from './world.js';
 import { ActiveRagdoll } from './ragdoll.js';
+import { Debris } from './debris.js';
 import { BRAWL } from '../core/config.js';
 import { bus, EV } from '../core/events.js';
 import { rng } from '../core/rng.js';
@@ -18,13 +19,18 @@ export class Brawl {
     fighters.forEach((f, i) => {
       f.ragdoll = new ActiveRagdoll(f, this.physics, i === 0 ? GROUP.A : GROUP.B);
     });
+    this.debris = new Debris(this.physics, arena, fighters);
 
     this._offs = [
       bus.on(EV.HIT_LANDED, (p) => this.onHit(p, 1)),
       bus.on(EV.HIT_BLOCKED, (p) => this.onHit(p, 0.3)),
       bus.on(EV.KNOCKDOWN, (p) => this.onDown(p, BRAWL.knockdownLaunch, 2.2)),
-      bus.on(EV.KO, (p) => this.onDown(p, BRAWL.koLaunch, Infinity))
+      bus.on(EV.KO, (p) => this.onDown(p, BRAWL.koLaunch, Infinity)),
+      bus.on(EV.HIT_WHIFF, (p) => this.onWhiff(p)),
+      bus.on(EV.DRINK, (p) => this.onDrink(p)),
+      bus.on('brawl:clonk', (p) => { if (p.type !== 'bottle') bus.emit(EV.SFX, { name: 'headhit', position: p.point, volume: 0.8 }); })
     ];
+    this._later = [];
   }
 
   // Direction from attacker to target on the floor, tipped upward, which is
@@ -55,6 +61,33 @@ export class Brawl {
       r.launch(_dir.x * v, Math.max(1.2, _dir.y * v), _dir.z * v, 2);
       bus.emit('brawl:launch', { fighter: t, power: dmg });
     }
+  }
+
+  // A drunk swing at nothing turns the whole body with it. Sober fighters
+  // barely notice; a blind drunk corkscrews and sometimes goes down.
+  onWhiff(p) {
+    const f = p?.fighter, r = f?.ragdoll;
+    if (!r?.built || p.dodged || f.dead) return;
+    const d = f.drunk01 ?? 0;
+    if (d < 0.3) return;
+    const fx = Math.sin(f.facing ?? 0), fz = Math.cos(f.facing ?? 0);
+    r.spin(fx, fz, (d - 0.3) * BRAWL.whiffSpin);
+    if (d > 0.55) bus.emit('brawl:whiff', { fighter: f });
+  }
+
+  // Every drink ends in a belch a beat later, and the belch rocks you back.
+  onDrink(p) {
+    const f = p?.fighter;
+    if (!f) return;
+    this._later.push({ t: 0.85, fn: () => {
+      if (f.dead) return;
+      const r = f.ragdoll;
+      const fx = Math.sin(f.facing ?? 0), fz = Math.cos(f.facing ?? 0);
+      r?.lean(-fx, -fz, BRAWL.burpLean * (0.6 + (f.drunk01 ?? 0)));
+      r?.hurt(0.3);
+      bus.emit(EV.SFX, { name: 'burp', position: f.position });
+      bus.emit('brawl:burp', { fighter: f });
+    } });
   }
 
   onDown(p, launch, limp) {
@@ -90,7 +123,12 @@ export class Brawl {
         bus.emit(EV.SFX, { name: 'hiccup', position: f.position });
       }
     }
+    this.debris.postStep(dt);
+    for (let i = this._later.length - 1; i >= 0; i--) {
+      const l = this._later[i];
+      if ((l.t -= dt) <= 0) { this._later.splice(i, 1); l.fn(); }
+    }
   }
 
-  dispose() { this._offs.forEach((o) => o()); this.fighters.forEach((f) => f.ragdoll?.dispose()); }
+  dispose() { this._offs.forEach((o) => o()); this.debris?.dispose(); this.fighters.forEach((f) => f.ragdoll?.dispose()); }
 }
