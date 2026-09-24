@@ -59,6 +59,22 @@ export const CFG = {
   audio: { master: 0.85, music: 0.5, sfx: 0.9, crowd: 0.55 }
 };
 
+// The physics comedy. Every number here is a dial on how silly the fight is.
+export const BRAWL = {
+  drunkWeakness: 0.55,     // share of muscle lost at full buzz
+  staggerStrength: 0.22,   // muscle left while reeling from a clean hit
+  wobble: 1.0,             // drunk sway torque
+  rootSpring: 90,          // how hard the hips chase the animation
+  chestSpring: 45,         // keeps a sagging drunk from folding in half
+  hiccup: 55,              // upward jolt of a hiccup, newton seconds
+  fallTilt: 0.95,          // chest tilt in radians that ends in a fall
+  hitImpulse: 7.5,         // impulse per point of damage on the part hit
+  launchPerDamage: 0.34,   // whole-body velocity per point on heavy blows
+  heavyHit: 11,            // damage above which a blow launches the body
+  knockdownLaunch: [6.5, 5.5],   // horizontal, vertical metres per second
+  koLaunch: [10, 7.5]
+};
+
 export const QUALITY_PRESETS = {
   // pixelRatio caps the render resolution relative to the screen, which is the
   // single biggest lever on cost: the post stack is a dozen fullscreen passes.

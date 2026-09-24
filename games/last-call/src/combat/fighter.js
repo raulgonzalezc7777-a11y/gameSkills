@@ -449,7 +449,11 @@ export class Fighter {
     try {
       this.poser.update(dt, st);
     } catch { /* the poser belongs to ANIM, never let it stop the fight */ }
-    this.knockdownPose(dt);
+    // With physics on, the pose above is only the muscles' target: the ragdoll
+    // reads it and puts the real, physical pose back on the bones before the
+    // hit test below looks at where the fists are.
+    if (this.ragdoll) this.ragdoll.afterPose();
+    else this.knockdownPose(dt);
     this._boneFrame = -1;
     this.syncBones(frame);
 

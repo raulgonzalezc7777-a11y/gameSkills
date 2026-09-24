@@ -12,6 +12,7 @@ import { bus, EV } from '../core/events.js';
 import { clamp01, expDamp } from '../core/math.js';
 import { ROSTER as CARD } from '../characters/roster.js';
 import { Director, PHASE } from './director.js';
+import { Brawl } from '../brawl/index.js';
 
 // The card lives with the characters, because a spec is character data.
 export { ROSTER } from '../characters/roster.js';
@@ -29,6 +30,9 @@ export class Match {
     this.cpu.position.copy(this.arena.spawnPoints[1]);
     this.cpu.facing = Math.PI;
     this.scene.add(this.player.object, this.cpu.object);
+
+    // Physics comedy: both fighters become active ragdolls in one world.
+    this.brawl = new Brawl(this.arena, [this.player, this.cpu]);
 
     this.brain = new Brain(this.cpu, this.player, 0.65);
     this.tpcam = new TPCamera(ctx.camera, { arena: this.arena });
@@ -68,6 +72,7 @@ export class Match {
       this.tpcam.update(dt, { x: 0, y: 0 });
       this.player.update(dt, { moveX: 0, moveY: 0 }, this.cpu);
       this.cpu.update(dt, { moveX: 0, moveY: 0 }, this.player);
+      this.brawl.step(dt);
       return;
     }
 
@@ -98,6 +103,7 @@ export class Match {
     if (!fighting) { cpuIntent.moveX = 0; cpuIntent.moveY = 0; cpuIntent.action = null; }
     this.player.update(dt, intent, this.cpu);
     this.cpu.update(dt, cpuIntent, this.player);
+    this.brawl.step(dt);
 
     this.ghost.l = expDamp(this.ghost.l, this.player.health, 1.6, dt);
     this.ghost.r = expDamp(this.ghost.r, this.cpu.health, 1.6, dt);
