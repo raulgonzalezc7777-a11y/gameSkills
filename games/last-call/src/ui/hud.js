@@ -96,7 +96,7 @@ export class HUD {
           <div class="eyebrow">EL GARITO · 03:47</div>
           <h1>LAST CALL</h1>
           <div class="sub">Pelea de bar a la hora de cierre</div>
-          <div class="cta">Haz clic para pelear</div>
+          <div class="cta"><span class="k-only">Haz clic para pelear</span><span class="t-only">Toca para pelear</span></div>
           <div class="quality" id="quality">
             <span class="qlabel">Calidad</span>
             <button data-q="auto" class="on">Auto</button>

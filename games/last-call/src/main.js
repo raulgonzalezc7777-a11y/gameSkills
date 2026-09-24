@@ -4,6 +4,7 @@ import { buildEnvironment } from './render/env.js';
 import { PostFX } from './render/postfx.js';
 import { Match } from './game/match.js';
 import { HUD } from './ui/hud.js';
+import { TouchControls, wantsTouch } from './ui/touch.js';
 import { VFX, installVFXListeners } from './vfx/index.js';
 import { AudioEngine, installAudioListeners } from './audio/index.js';
 import { input } from './core/input.js';
@@ -47,6 +48,13 @@ const post = new PostFX(renderer, scene, camera, {
 const hud = new HUD().mount(document.getElementById('ui-root'));
 hud.bindWorld(camera, match);
 hud._debug = qsBoot.has('debug');
+const touch = new TouchControls().mount(document.getElementById('ui-root'), {
+  onPause: () => { if (started) hud.setPaused(!hud.paused); }
+});
+let touchMode = wantsTouch() || qsBoot.has('touch');
+const markTouch = () => document.documentElement.classList.add('touch-device');
+if (touchMode) markTouch();
+window.addEventListener('touchstart', () => { if (!touchMode) { touchMode = true; markTouch(); if (started) touch.show(true); } }, { passive: true });
 
 // Effects listen to the event bus, so combat never calls them directly.
 const vfx = new VFX({ scene, camera, renderer, quality, floorY: match.arena.floorY });
@@ -113,12 +121,13 @@ function start(fromGesture) {
   started = true;
   hud.start();
   match.begin();
+  touch.show(touchMode);
   // Pointer lock only ever succeeds inside a real user gesture. Asking for it
   // anywhere else throws, which would pollute every automated capture log with
   // an error that is not a bug.
   // Inside a sandboxed iframe pointer lock can be refused; the game is fully
   // playable on the keyboard without it, so a refusal is not an error.
-  if (fromGesture) Promise.resolve().then(() => input.requestLock(canvas)).catch(() => {});
+  if (fromGesture && !touchMode) Promise.resolve().then(() => input.requestLock(canvas)).catch(() => {});
   // Audio only exists once a real gesture has happened. An automated capture
   // run stays silent, which is exactly what it wants.
   if (fromGesture) audio.init().then(() => audio.music.start()).catch(() => {});
@@ -178,6 +187,7 @@ function frame(nowMs) {
   } else {
     post.render(time.rawDt);
   }
+  touch.update(match.director.borracheraReady);
   hud.update(dt, { ...match.hudState(), fps: time.fps, tris: renderer.info.render.triangles + ' tris' });
   input.lateUpdate();
   // Automatic quality: after the fight starts, if the machine cannot hold a
@@ -201,4 +211,4 @@ function frame(nowMs) {
 requestAnimationFrame(frame);
 
 // Expose for the automated visual review harness and for debugging.
-window.__game = { scene, camera, renderer, match, post, hud, vfx, audio, time, CFG, THREE };
+window.__game = { scene, camera, renderer, match, post, hud, vfx, audio, time, CFG, THREE, input };

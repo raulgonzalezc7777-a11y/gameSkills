@@ -36,6 +36,7 @@ class Input {
       magnitude: 0
     };
     this.gamepadIndex = null;
+    this.stick = { x: 0, y: 0 };
     this._buffer = []; // {action, t} attack buffer for combo windows
     this.bufferWindow = 0.28;
     this.enabled = true;
@@ -77,6 +78,23 @@ class Input {
     window.addEventListener('blur', this._onBlur);
     return this;
   }
+
+  // On-screen controls feed the same pipes as the keyboard: a virtual button
+  // is a key code held down, the stick overrides WASD while it is pushed.
+  virtualPress(code) {
+    if (this.keys.has(code)) return;
+    this.keys.add(code);
+    this.pressedThisFrame.add(code);
+    const act = this.actionFor(code);
+    if (act) this._buffer.push({ action: act, t: performance.now() / 1000 });
+  }
+
+  virtualRelease(code) {
+    if (!this.keys.delete(code)) return;
+    this.releasedThisFrame.add(code);
+  }
+
+  setStick(x, y) { this.stick.x = x; this.stick.y = y; }
 
   requestLock(el) {
     try { const r = el?.requestPointerLock?.(); r?.catch?.(() => {}); } catch { /* refused */ }
@@ -121,6 +139,8 @@ class Input {
     if (this.down('right')) mx += 1;
     if (this.down('forward')) my += 1;
     if (this.down('back')) my -= 1;
+
+    if (this.stick.x || this.stick.y) { mx = this.stick.x; my = this.stick.y; }
 
     // Gamepad overrides when a stick is actually pushed.
     const pads = navigator.getGamepads?.() || [];

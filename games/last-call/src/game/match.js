@@ -15,6 +15,8 @@ import { ROSTER as CARD } from '../characters/roster.js';
 import { Director, PHASE } from './director.js';
 import { Brawl } from '../brawl/index.js';
 
+const _fwd = new THREE.Vector3();
+
 // The card lives with the characters, because a spec is character data.
 export { ROSTER } from '../characters/roster.js';
 
@@ -54,6 +56,27 @@ export class Match {
     this.director.phaseTimer = 1.4;
   }
 
+  // The stick is read in screen space: right is right on the screen, up is
+  // into the screen. The fighter moves in its own frame (forward is toward
+  // the opponent), so the stick is turned into that frame here. With a side-on
+  // camera a fighter-relative stick would make 'right' mean 'into the screen'.
+  screenMove(mx, my) {
+    const out = this._move || (this._move = { x: 0, y: 0 });
+    if (!mx && !my) { out.x = 0; out.y = 0; return out; }
+    const cam = this.tpcam.camera;
+    cam.getWorldDirection(_fwd);
+    _fwd.y = 0;
+    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, -1);
+    _fwd.normalize();
+    const wx = -_fwd.z * mx + _fwd.x * my;   // camera right is (-fz, fx)
+    const wz = _fwd.x * mx + _fwd.z * my;
+    const f = this.player.facing;
+    const fx = Math.sin(f), fz = Math.cos(f);
+    out.y = wx * fx + wz * fz;
+    out.x = wx * fz - wz * fx;
+    return out;
+  }
+
   update(dt) {
     // Light the fight, not the middle of the room.
     _focus.copy(this.player.position).lerp(this.cpu.position, 0.5);
@@ -88,9 +111,10 @@ export class Match {
     const action = input.consumeBuffered(['jab', 'cross', 'hook', 'uppercut', 'kick'], now);
     // The full intent shape. Combat reads the optional fields defensively, so
     // a mechanic can land here before it lands there without breaking a build.
+    const move = this.screenMove(input.state.moveX, input.state.moveY);
     const intent = {
-      moveX: fighting ? input.state.moveX : 0,
-      moveY: fighting ? input.state.moveY : 0,
+      moveX: fighting ? move.x : 0,
+      moveY: fighting ? move.y : 0,
       sprint: input.state.sprint,
       block: fighting && input.state.block,
       action: fighting ? action : null,
