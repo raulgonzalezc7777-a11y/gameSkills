@@ -125,8 +125,8 @@ export class Match {
 
   hudState() {
     return {
-      l: { name: this.player.spec.name, health: this.player.health, ghost: this.ghost.l, stamina: this.player.stamina, drunk: this.player.drunk },
-      r: { name: this.cpu.spec.name, health: this.cpu.health, ghost: this.ghost.r, stamina: this.cpu.stamina, drunk: this.cpu.drunk },
+      l: { name: this.player.spec.name, accent: this.player.spec.tank, health: this.player.health, ghost: this.ghost.l, stamina: this.player.stamina, drunk: this.player.drunk },
+      r: { name: this.cpu.spec.name, accent: this.cpu.spec.tank, health: this.cpu.health, ghost: this.ghost.r, stamina: this.cpu.stamina, drunk: this.cpu.drunk },
       clock: this.clock, round: this.round,
       wins: this.director.wins, hype: this.director.hype,
       lastCall: this.director.lastCall, phase: this.director.phase

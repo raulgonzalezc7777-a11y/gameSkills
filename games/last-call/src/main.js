@@ -45,6 +45,8 @@ const post = new PostFX(renderer, scene, camera, {
   bloom: !off.has('bloom')
 });
 const hud = new HUD().mount(document.getElementById('ui-root'));
+hud.bindWorld(camera, match);
+hud._debug = qsBoot.has('debug');
 
 // Effects listen to the event bus, so combat never calls them directly.
 const vfx = new VFX({ scene, camera, renderer, quality, floorY: match.arena.floorY });
@@ -150,6 +152,7 @@ function frame(nowMs) {
 
   accumulator += dt;
   let steps = 0;
+  if (hud.paused) accumulator = 0;
   while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
     match.update(FIXED_DT);
     accumulator -= FIXED_DT;
