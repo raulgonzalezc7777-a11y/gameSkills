@@ -38,26 +38,39 @@ export class TPCamera {
     const A = this.a, B = this.b;
     if (!A) return;
 
-    // Targets are plain Vector3 positions supplied by the match.
-    _a.copy(A); _a.y += 1.25;
-    if (B) { _b.copy(B); _b.y += 1.25; } else _b.copy(_a);
-    _mid.copy(_a).lerp(_b, 0.42);
+    // Targets are the fighters' physical pelvises, supplied by the match, so
+    // a body sent flying stays in frame instead of leaving its root behind.
+    _a.copy(A); _a.y += 0.45;
+    if (B) { _b.copy(B); _b.y += 0.45; } else _b.copy(_a);
+    _mid.copy(_a).lerp(_b, 0.5);
     const sep = _a.distanceTo(_b);
 
-    // Orbit angle: behind the player, biased so the opponent stays framed.
+    // Side-on fighting-game framing. The camera sits most of the way round to
+    // the side of the line between the fighters, so both bodies, the gap
+    // between them and every flailing limb read in profile; a small bias
+    // toward the player's back keeps "forward" meaning toward the opponent.
+    // There are two mirror-image sides; the camera keeps whichever it is on
+    // and only swaps when the other is much closer, so it never flips when
+    // the fighters trade places mid-exchange.
     _dir.copy(_b).sub(_a);
     const duelYaw = Math.atan2(_dir.x, _dir.z);
-    // Swing about thirty degrees off the line between the fighters. Straight
-    // behind the player, the player's own body hides the opponent in every
-    // exchange; off-axis, both heads read and the space between them shows.
-    this.yaw = dampAngle(this.yaw, duelYaw + Math.PI + CFG.camera.orbitOffset, 5.0, dt) + lookInput.x * dt * 2.4;
-    this.pitch = clamp(this.pitch + lookInput.y * dt * 1.6, -0.35, 0.5);
+    const off = CFG.camera.orbitOffset;
+    const yA = duelYaw + Math.PI + off, yB = duelYaw + Math.PI - off;
+    const dA = Math.abs(wrapAngle(yA - this.yaw)), dB = Math.abs(wrapAngle(yB - this.yaw));
+    if (this._side === undefined) this._side = dA <= dB ? 1 : -1;
+    else if (this._side === 1 && dB + 0.6 < dA) this._side = -1;
+    else if (this._side === -1 && dA + 0.6 < dB) this._side = 1;
+    const wantYaw = this._side === 1 ? yA : yB;
+    this.yaw = dampAngle(this.yaw, wantYaw, 3.2, dt) + lookInput.x * dt * 2.4;
+    this.pitch = clamp(expDamp(this.pitch, CFG.camera.pitch, 2, dt) + lookInput.y * dt * 1.6, -0.2, 0.6);
 
-    // Pull back as the fighters separate so both always read.
-    const wantDist = clamp(CFG.camera.distance + sep * 0.44, 3.3, 7.6);
-    this.dist = expDamp(this.dist, wantDist, 4.5, dt);
-    const wantFov = CFG.camera.fov + clamp(sep * 1.2, 0, 10);
-    this.fov = expDamp(this.fov, wantFov, 5.0, dt);
+    // Pull back as the fighters separate or one goes airborne, so a launch is
+    // a wide shot of the whole arc rather than two bodies leaving frame.
+    const air = Math.max(0, Math.max(_a.y, _b.y) - 1.6);
+    const wantDist = clamp(CFG.camera.distance + sep * 0.62 + air * 1.2, CFG.camera.distance, 10.5);
+    this.dist = expDamp(this.dist, wantDist, 3.2, dt);
+    const wantFov = CFG.camera.fov + clamp(sep * 0.8, 0, 8);
+    this.fov = expDamp(this.fov, wantFov, 4.0, dt);
 
     if (this.override) {
       const o = this.override;
@@ -70,21 +83,9 @@ export class TPCamera {
     const sinP = Math.sin(this.pitch), cosP = Math.cos(this.pitch);
     _c.set(
       _mid.x + Math.sin(this.yaw) * cosP * this.dist,
-      _mid.y + CFG.camera.height * 0.55 + sinP * this.dist + 0.55,
+      _mid.y + sinP * this.dist + CFG.camera.height,
       _mid.z + Math.cos(this.yaw) * cosP * this.dist
     );
-
-    // Over the shoulder. Sitting dead behind the player puts their back
-    // between the camera and the opponent, which is the one thing a fighting
-    // game camera must never do. The offset is perpendicular to the duel axis
-    // and eases with separation, so a clinch does not swing wide.
-    const shoulderSide = Math.cos(this.yaw), shoulderFwd = -Math.sin(this.yaw);
-    const shoulder = CFG.camera.shoulder * clamp(sep * 0.55, 0.45, 1.35);
-    _c.x += shoulderSide * shoulder;
-    _c.z += shoulderFwd * shoulder;
-    // Aim slightly past the midpoint toward the opponent so the frame has
-    // leading room rather than centring the player's spine.
-    _mid.lerp(_b, 0.18);
 
     // Keep the camera inside the venue. The room is a 9.6 by 7.4 rectangle
     // with a 4.7 ceiling, so a single radius clamp both over-restricted the

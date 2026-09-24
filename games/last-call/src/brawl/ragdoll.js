@@ -109,6 +109,7 @@ export class ActiveRagdoll {
       const offP = start.clone().sub(centre).applyQuaternion(q.clone().invert());
 
       const seg = {
+        loose: /Arm|head/.test(name),
         name, bone, end, body, len, gain, support, parent,
         offQ, offP, qt: new THREE.Quaternion(), pt: new THREE.Vector3(),
         inertia: mass * (len * len + hw * hw * 4) / 12
@@ -235,6 +236,10 @@ export class ActiveRagdoll {
     this.strength = target < this.strength ? target : Math.min(target, this.strength + dt * 1.6);
     const s = this.strength;
     const g = -this.brawl.world.gravity.y;
+    const a = this.f.attacking;
+    const limb = a && a.phase !== 'recovery' ? (a.move?.limb || '') : '';
+    this._tense = limb === 'handL' ? 'ArmL' : limb === 'handR' ? 'ArmR' : limb === 'footR' ? 'R' : limb === 'footL' ? 'L' : null;
+    if (this._tense && limb.startsWith('foot')) this._tense = null;
 
     for (const seg of this.segs) {
       const b = seg.body;
@@ -249,8 +254,13 @@ export class ActiveRagdoll {
         if (_q2.w < 0) { _q2.x = -_q2.x; _q2.y = -_q2.y; _q2.z = -_q2.z; _q2.w = -_q2.w; }
         const sinHalf = Math.hypot(_q2.x, _q2.y, _q2.z);
         const angle = 2 * Math.atan2(sinHalf, _q2.w);
-        const kp = seg.gain * s;
-        const kd = 2 * Math.sqrt(seg.gain) * 0.8 * Math.sqrt(s);
+        // The striking limb tenses for the punch, so a floppy drunk still
+        // throws a fast, snapping fist, and loosens again on recovery.
+        const tense = this._tense && /Arm|arm/.test(seg.name) && seg.name.endsWith(this._tense.slice(-1)) ? tuning.punchTense : 1;
+        const loose = seg.loose ? tuning.looseLimbs : 1;
+        const gain = seg.gain * tense * loose;
+        const kp = gain * s;
+        const kd = 2 * Math.sqrt(gain) * 0.8 * Math.sqrt(s);
         let ax = 0, ay = 0, az = 0;
         if (sinHalf > 1e-5) { ax = _q2.x / sinHalf; ay = _q2.y / sinHalf; az = _q2.z / sinHalf; }
         // Desired angular acceleration, then torque through the body's real
@@ -279,6 +289,20 @@ export class ActiveRagdoll {
         let fy = kp * (pt.y - b.position.y) - kd * b.velocity.y;
         let fz = kp * (pt.z - b.position.z) - kd * b.velocity.z;
         const mag = Math.hypot(fx, fy, fz), cap = 90;
+        if (mag > cap) { fx *= cap / mag; fy *= cap / mag; fz *= cap / mag; }
+        b.force.x += b.mass * fx; b.force.y += b.mass * fy; b.force.z += b.mass * fz;
+      }
+    }
+
+    // Punch pull: while the strike is live, the fist is yanked toward what it
+    // is aimed at. Muscles alone give a soft, late fist; this gives the snap.
+    if (s > 0.05 && this._tense && this.f._aimed && this.f._strikeT && a && a.phase !== 'recovery') {
+      const fist = this.byName['forearm' + this._tense.slice(-1)];
+      if (fist) {
+        const b = fist.body, t = this.f._strikeT;
+        const k = tuning.punchPull * (a.phase === 'active' ? 1 : 0.55);
+        let fx = k * (t.x - b.position.x), fy = k * (t.y - b.position.y), fz = k * (t.z - b.position.z);
+        const mag = Math.hypot(fx, fy, fz), cap = 900;
         if (mag > cap) { fx *= cap / mag; fy *= cap / mag; fz *= cap / mag; }
         b.force.x += b.mass * fx; b.force.y += b.mass * fy; b.force.z += b.mass * fz;
       }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 const _focus = new THREE.Vector3();
+const _camA = new THREE.Vector3(), _camB = new THREE.Vector3();
 import { Fighter } from '../combat/fighter.js';
 import { Brain } from '../ai/brain.js';
 import { Arena } from '../world/arena.js';
@@ -36,7 +37,7 @@ export class Match {
 
     this.brain = new Brain(this.cpu, this.player, 0.65);
     this.tpcam = new TPCamera(ctx.camera, { arena: this.arena });
-    this.tpcam.setTargets(this.player.position, this.cpu.position);
+    this.tpcam.setTargets(_camA, _camB);
 
     // The director owns pacing: hype, Last Call, knockdown counts and rounds.
     this.director = new Director([this.player, this.cpu]);
@@ -65,6 +66,10 @@ export class Match {
       0.42 + (this.cpu.rig?.height ?? 1.85) * 0.06, Math.max(0, this.cpu.position.y));
     this.arena.update(dt, time.elapsed);
     this.tpcam.drunk = this.player.drunk01;
+    // The camera frames the bodies, not the gameplay roots.
+    for (const [f, v] of [[this.player, _camA], [this.cpu, _camB]]) {
+      if (f.ragdoll?.built) f.ragdoll.pelvisPosition(v); else v.copy(f.position).setY(0.95);
+    }
 
     if (!this.running) {
       // Attract mode: orbit the empty ring so the title screen is alive.

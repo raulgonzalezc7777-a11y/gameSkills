@@ -20,12 +20,13 @@ export const CFG = {
     grading: { lift: 0.008, gamma: 1.0, gain: 1.02, saturation: 0.94, temperature: 0.05 }
   },
   camera: {
-    fov: 46,
-    fovSprint: 56,
-    distance: 3.95,
-    height: 1.58,
-    shoulder: 0.34,
-    orbitOffset: 0.52,
+    fov: 44,
+    fovSprint: 52,
+    distance: 4.6,
+    height: 0.35,
+    pitch: 0.2,
+    shoulder: 0,
+    orbitOffset: 1.22,       // radians off the line behind the player: nearly side-on
     damping: 11.0,
     collisionRadius: 0.32
   },
@@ -61,18 +62,21 @@ export const CFG = {
 
 // The physics comedy. Every number here is a dial on how silly the fight is.
 export const BRAWL = {
-  drunkWeakness: 0.55,     // share of muscle lost at full buzz
+  drunkWeakness: 0.62,     // share of muscle lost at full buzz
+  looseLimbs: 0.55,        // arms and head run softer, so they swing and bobble
+  punchTense: 4.2,
+  punchPull: 420,          // how hard a live punch drags the fist at its target         // how hard the striking arm tenses for the punch
   staggerStrength: 0.22,   // muscle left while reeling from a clean hit
-  wobble: 1.0,             // drunk sway torque
+  wobble: 1.9,             // drunk sway torque
   rootSpring: 90,          // how hard the hips chase the animation
   chestSpring: 45,         // keeps a sagging drunk from folding in half
   hiccup: 55,              // upward jolt of a hiccup, newton seconds
-  fallTilt: 0.95,          // chest tilt in radians that ends in a fall
-  hitImpulse: 7.5,         // impulse per point of damage on the part hit
-  launchPerDamage: 0.34,   // whole-body velocity per point on heavy blows
-  heavyHit: 11,            // damage above which a blow launches the body
-  knockdownLaunch: [6.5, 5.5],   // horizontal, vertical metres per second
-  koLaunch: [10, 7.5]
+  fallTilt: 0.8,          // chest tilt in radians that ends in a fall
+  hitImpulse: 11,         // impulse per point of damage on the part hit
+  launchPerDamage: 0.42,   // whole-body velocity per point on heavy blows
+  heavyHit: 9,            // damage above which a blow launches the body
+  knockdownLaunch: [7.5, 6.5],   // horizontal, vertical metres per second
+  koLaunch: [12, 9]
 };
 
 export const QUALITY_PRESETS = {
