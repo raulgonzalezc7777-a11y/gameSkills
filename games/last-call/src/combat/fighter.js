@@ -64,6 +64,10 @@ export class Fighter {
     this.ctx = { arena: this.arena, director: this.director, physics: this.physics };
     this.propSys = getPropSystem(this.arena);
 
+    // Per-fighter multipliers: the fighter's own stats, the drink picked
+    // before the bout and the level's rules all land here (meta/catalog.js).
+    this.mod = { pow: 1, chin: 1, speed: 1, heal: 1, buzz: 1, regen: 1 };
+
     // Frozen contract fields.
     this.health = CFG.fighter.maxHealth;
     this.parts = { head: 100, body: 100, legs: 100 };
@@ -220,9 +224,9 @@ export class Fighter {
 
   drink() {
     if (this.attacking || this.downed > 0 || this.dead || this.drinkLock > 0) return false;
-    this.drunk = Math.min(CFG.fighter.drunk.max, this.drunk + TUNE.drinkBuzz);
+    this.drunk = Math.min(CFG.fighter.drunk.max, this.drunk + TUNE.drinkBuzz * this.mod.buzz);
     this.stamina = Math.min(CFG.fighter.maxStamina, this.stamina + TUNE.drinkStam);
-    this.health = Math.min(CFG.fighter.maxHealth, this.health + TUNE.drinkHeal);
+    this.health = Math.min(CFG.fighter.maxHealth, this.health + TUNE.drinkHeal * this.mod.heal);
     this.drinkLock = TUNE.drinkLock;
     this.stun = Math.max(this.stun, TUNE.drinkLock * 0.6); // wide open while you drink
     bus.emit(EV.DRINK, { fighter: this });
@@ -367,7 +371,7 @@ export class Fighter {
     // Stamina. A battered body regenerates worse, which is the body damage
     // consequence the design doc asks for.
     if (!this.attacking && this.downed <= 0) {
-      const regen = D.staminaRegen * lm.staminaMul * (this.blocking ? 0.35 : 1);
+      const regen = D.staminaRegen * lm.staminaMul * this.mod.regen * (this.blocking ? 0.35 : 1);
       this.stamina = Math.min(D.maxStamina, this.stamina + regen * dt);
     }
     if (this.guard < TUNE.guardMax && !this.blocking) {
@@ -504,7 +508,7 @@ export class Fighter {
     }
 
     const sprint = I.sprint && this.stamina > 12 && !this.blocking && !locked;
-    const base = (sprint ? D.runSpeed : D.walkSpeed) * lm.speedMul;
+    const base = (sprint ? D.runSpeed : D.walkSpeed) * lm.speedMul * this.mod.speed;
     const fx = Math.sin(this.facing), fz = Math.cos(this.facing);
     const rx = fz, rz = -fx;
     const wantVx = (fx * my * (my < 0 ? D.backMul : 1) + rx * mx * D.strafeMul) * base;

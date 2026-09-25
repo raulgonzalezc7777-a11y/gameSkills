@@ -228,10 +228,15 @@ export class PostFX {
     this.dofRT = makeRT(hw, hh);
     this.bokehRT = makeRT(hw, hh);
 
+    // Two chains: the downsampled levels, and a separate upsampled level for
+    // each size but the smallest. The upsample reads its own size's down level
+    // and writes the up level, so no pass ever samples its own target.
     this.bloomRTs = [];
+    this.bloomUpRTs = [];
     let bw = hw, bh = hh;
     for (let i = 0; i < BLOOM_LEVELS; i++) {
       this.bloomRTs.push(makeRT(bw, bh));
+      if (i < BLOOM_LEVELS - 1) this.bloomUpRTs.push(makeRT(bw, bh));
       bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1);
     }
   }
@@ -241,6 +246,7 @@ export class PostFX {
       this[k]?.dispose();
     }
     this.bloomRTs?.forEach((rt) => rt.dispose());
+    this.bloomUpRTs?.forEach((rt) => rt.dispose());
     this.sceneRT?.depthTexture?.dispose();
   }
 
@@ -408,13 +414,14 @@ export class PostFX {
         this._draw(this.downMat, this.bloomRTs[i]);
       }
       for (let i = BLOOM_LEVELS - 1; i > 0; i--) {
-        const src = this.bloomRTs[i];
+        // The smallest level starts the climb; every later step reads the
+        // up level the previous step wrote. Writing into the down level it
+        // was also reading was a feedback loop, and WebGL drops such draws.
+        const src = i === BLOOM_LEVELS - 1 ? this.bloomRTs[i] : this.bloomUpRTs[i];
         this.upMat.uniforms.tSource.value = src.texture;
         this.upMat.uniforms.tTarget.value = this.bloomRTs[i - 1].texture;
         this.upMat.uniforms.uTexel.value.set(1 / src.width, 1 / src.height);
-        // Ping-pong through the AO scratch buffer would cost a resize, so the
-        // upsample reads and writes different levels and never aliases.
-        this._draw(this.upMat, this.bloomRTs[i - 1]);
+        this._draw(this.upMat, this.bloomUpRTs[i - 1]);
       }
     }
 
@@ -422,8 +429,8 @@ export class PostFX {
     {
       const u = this.presentMat.uniforms;
       u.tColor.value = colorRT.texture;
-      u.tBloom.value = this.bloomRTs[0].texture;
-      u.tBokeh.value = this.q.dof ? this.bokehRT.texture : this.bloomRTs[0].texture;
+      u.tBloom.value = this.bloomUpRTs[0].texture;
+      u.tBokeh.value = this.q.dof ? this.bokehRT.texture : this.bloomUpRTs[0].texture;
       u.tDepth.value = this.sceneRT.depthTexture;
       u.uTexel.value.set(1 / this.width, 1 / this.height);
       u.uNear.value = near; u.uFar.value = far;

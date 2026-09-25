@@ -189,6 +189,20 @@ export class ActiveRagdoll {
   wake() { this.limp = 0; }
   hurt(seconds) { this.stagger = Math.max(this.stagger, seconds); }
 
+  // Stand the body back up at its animation target on the next step.
+  requestSnap() { this._snap = true; this.limp = 0; this.stagger = 0; }
+
+  snapToTargets() {
+    for (const s of this.segs) {
+      const b = s.body;
+      b.position.set(s.pt.x, s.pt.y, s.pt.z);
+      b.quaternion.set(s.qt.x, s.qt.y, s.qt.z, s.qt.w);
+      b.velocity.setZero(); b.angularVelocity.setZero();
+      b.force.setZero(); b.torque.setZero();
+    }
+    this.tiltT = 0;
+  }
+
   // Cartoon launch: every body gets the same velocity plus a tumble, which is
   // what reads as "sent flying" instead of "a limb got pushed".
   launch(vx, vy, vz, spin = 0) {
@@ -244,6 +258,7 @@ export class ActiveRagdoll {
 
   preStep(dt, drunk01, tuning) {
     if (!this.built) return;
+    if (this._snap) { this._snap = false; this.snapToTargets(); }
     this.t += dt;
     this.stagger = Math.max(0, this.stagger - dt);
     if (this.limp !== Infinity) this.limp = Math.max(0, this.limp - dt);

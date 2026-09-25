@@ -143,7 +143,8 @@ export function installAudioListeners(audio) {
     }
   });
 
-  on(EV.ROUND_START, (p) => {
+  on(EV.ROUND_START, () => audio.surgeCrowd('roar', 0.7));
+  on(EV.FIGHT_START, (p) => {
     audio.play('bell', { volume: 0.9 });
     audio.music.lastCall(false);
     audio.music.setIntensity(0.72);

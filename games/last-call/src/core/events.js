@@ -36,7 +36,8 @@ export const EV = {
   DRINK: 'fighter:drink',
   FOOTSTEP: 'fighter:footstep',
   COMBO: 'combat:combo',
-  ROUND_START: 'match:roundStart',
+  ROUND_START: 'match:roundStart',   // the round's intro: reset, walk-out
+  FIGHT_START: 'match:fightStart',   // the bell: fighting is live
   ROUND_END: 'match:roundEnd',
   MATCH_END: 'match:end',
   CAMERA_SHAKE: 'camera:shake',

@@ -80,8 +80,12 @@ const vfx = new VFX({ scene, camera, renderer, quality, floorY: match.arena.floo
 installVFXListeners(vfx);
 vfx.trackFighter(match.player);
 vfx.trackFighter(match.cpu);
-// Soft particles need the scene depth, which only the post stack owns.
-vfx.setDepthTexture(post.sceneRT.depthTexture, camera.near, camera.far);
+// No soft-particle depth: particles are drawn inside the scene pass, and the
+// only depth texture is the one that pass is writing. Sampling it there is a
+// framebuffer feedback loop, which WebGL answers by dropping the draw, so the
+// sparks, glass and beer never appeared at all. Without depth they fade on
+// their own ramps and render every time.
+vfx.setDepthTexture(null, camera.near, camera.far);
 
 // Everything is synthesized, so there is nothing to preload. The context
 // still cannot start before a gesture, which init() handles on its own.

@@ -118,7 +118,9 @@ function buildBody(type, mat) {
 const HALF_H = { bottle: 0.1425, stool: 0.335, crate: 0.3 };
 
 export class Debris {
-  constructor(physics, arena, fighters) {
+  constructor(physics, arena, fighters, opts = {}) {
+    this.rain = !!opts.rain;
+    this.rainT = 3;
     this.physics = physics;
     this.fighters = fighters;
     this.floorY = physics.floorY;
@@ -195,7 +197,10 @@ export class Debris {
       // A fighter walking into it claims it; a thrown one landing on the
       // other fighter is a hit, credited to whoever sent it.
       const speed = item.body.velocity.length();
-      if (item.toucher && item.toucher !== f && speed > 4 && this.clock - item.touchT < 2.5 && item.hitCd <= 0) {
+      if (item.toucher === 'crowd' && speed > 3 && item.hitCd <= 0) {
+        this._hits.push({ item, victim: f, by: null, speed });
+        item.hitCd = 0.8;
+      } else if (item.toucher && item.toucher !== f && speed > 4 && this.clock - item.touchT < 2.5 && item.hitCd <= 0) {
         this._hits.push({ item, victim: f, by: item.toucher, speed });
         item.hitCd = 0.8;
       } else if (impact > 1.2 || speed < 1.5) {
@@ -212,6 +217,7 @@ export class Debris {
   postStep(dt) {
     this.clock += dt;
     this.frame++;
+    if (this.rain) this.rainStep(dt);
     for (const it of this.items) {
       if (it.hitCd > 0) it.hitCd -= dt;
       if (!it.alive) {
@@ -226,6 +232,7 @@ export class Debris {
         }
         continue;
       }
+      if (it.toucher === 'crowd' && it.body.velocity.lengthSquared() < 1) it.toucher = null;
       _prev.copy(it.mesh.position);
       this.sync(it);
       it.prev.copy(_prev);
@@ -261,8 +268,36 @@ export class Debris {
     }
   }
 
+  // Bottle rain: the crowd lobs a bottle at a random fighter every few
+  // seconds. Anyone can be hit; it stings and staggers but never knocks out.
+  rainStep(dt) {
+    this.rainT -= dt;
+    if (this.rainT > 0) return;
+    this.rainT = rng.range(2.2, 4);
+    const bottles = this.items.filter((i) => i.type === 'bottle');
+    const it = bottles.find((i) => !i.alive) || rng.pick(bottles);
+    const target = rng.pick(this.fighters.filter((f) => !f.dead));
+    if (!it || !target) return;
+    const a = rng.range(0, Math.PI * 2), R = this.physics.ringRadius - 0.4;
+    this.place(it, { a, r: R }, 1.9);
+    const b = it.body, t = 0.75;
+    const tx = target.position.x + rng.range(-0.3, 0.3), tz = target.position.z + rng.range(-0.3, 0.3);
+    b.velocity.set((tx - b.position.x) / t, (1.4 - b.position.y) / t + 0.5 * 14 * t, (tz - b.position.z) / t);
+    b.angularVelocity.set(rng.range(-9, 9), rng.range(-9, 9), rng.range(-9, 9));
+    it.toucher = 'crowd';
+    it.hitCd = 0;
+    bus.emit('brawl:rain', { position: { x: b.position.x, y: b.position.y, z: b.position.z } });
+  }
+
   hit({ item, victim, by, speed }) {
     if (victim.dead || !victim.hurtboxes) return;
+    if (!by) {
+      victim.health = Math.max(1, victim.health - 3);
+      victim.ragdoll?.hurt?.(0.4);
+      bus.emit('brawl:clonk', { fighter: victim, type: item.type, point: item.mesh.position.clone(), speed });
+      if (item.type === 'bottle') this.shatter(item);
+      return;
+    }
     const frame = 1e6 + this.frame;
     const hb = victim.syncBones ? victim.syncBones(frame) : victim.hurtboxes.refresh(frame);
     _v.set(item.body.position.x, item.body.position.y, item.body.position.z);

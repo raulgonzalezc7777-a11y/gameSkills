@@ -213,8 +213,9 @@ export class HUD {
     bus.on(EV.KO, () => this.announce('K.O.', '¡fuera de combate!', 'ko'));
     bus.on(EV.ROUND_START, ({ round }) => {
       this.els.round.textContent = `ASALTO ${round}`;
-      this.announce(`ASALTO ${round}`, '¡a pelear!');
+      this.announce(`ASALTO ${round}`, 'prepárate');
     });
+    bus.on(EV.FIGHT_START, () => this.announce('¡PELEA!', ''));
     bus.on(EV.UI_STATE, (p) => {
       if (!p?.announce) return;
       const map = { 'LAST CALL': ['ÚLTIMA RONDA', 'todos beben'], 'GUARD BREAK': ['¡GUARDIA ROTA!', ''], COUNTER: null };

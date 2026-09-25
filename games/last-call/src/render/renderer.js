@@ -16,7 +16,7 @@ export function createRenderer(canvas) {
   renderer.toneMapping = THREE.NoToneMapping; // post stack owns tonemapping
   renderer.toneMappingExposure = CFG.render.exposure;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.shadowMap.autoUpdate = true;
   renderer.info.autoReset = false;
 

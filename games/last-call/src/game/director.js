@@ -112,7 +112,7 @@ export class Director {
 
     switch (this.phase) {
       case PHASE.INTRO:
-        if (this.phaseTimer <= 0) { this.phase = PHASE.FIGHT; bus.emit(EV.ROUND_START, { round: this.round }); }
+        if (this.phaseTimer <= 0) { this.phase = PHASE.FIGHT; bus.emit(EV.FIGHT_START, { round: this.round }); }
         break;
 
       case PHASE.FIGHT: {

@@ -13,14 +13,21 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _dir = new THREE.Vecto
 // Wires the physics to the fight: hits become impulses, knockdowns become
 // launches, knockouts become sacks of potatoes, and drink becomes wobble.
 export class Brawl {
-  constructor(arena, fighters) {
+  constructor(arena, fighters, mods = []) {
     this.physics = new BrawlWorld(arena);
+    this.mods = new Set(mods || []);
+    // Level rules that live in the physics (see meta/levels.js).
+    this.launchMul = this.mods.has('cuerdasLocas') ? 1.5 : 1;
+    if (this.mods.has('cuerdasLocas')) {
+      for (const cm of this.physics.world.contactmaterials) if (cm.materials.includes(this.physics.matRope)) cm.restitution = 1.05;
+    }
+    if (this.mods.has('lunar')) this.physics.world.gravity.set(0, -6.5, 0);
     this.arena = arena;
     this.fighters = fighters;
     fighters.forEach((f, i) => {
       f.ragdoll = new ActiveRagdoll(f, this.physics, i === 0 ? GROUP.A : GROUP.B);
     });
-    this.debris = new Debris(this.physics, arena, fighters);
+    this.debris = new Debris(this.physics, arena, fighters, { rain: this.mods.has('lluviaBotellas') });
 
     this._offs = [
       bus.on(EV.HIT_LANDED, (p) => this.onHit(p, 1)),
@@ -58,7 +65,7 @@ export class Brawl {
     r.strike(point, _dir, dmg * BRAWL.hitImpulse);
     r.hurt(0.18 + dmg * 0.025);
     if (scale >= 1 && dmg >= BRAWL.heavyHit) {
-      const v = dmg * BRAWL.launchPerDamage;
+      const v = dmg * BRAWL.launchPerDamage * this.launchMul;
       r.launch(_dir.x * v, Math.max(1.2, _dir.y * v), _dir.z * v, 2);
       bus.emit('brawl:launch', { fighter: t, power: dmg });
     }
@@ -96,7 +103,8 @@ export class Brawl {
     if (!r?.built) return;
     r.goLimp(limp);
     this.pushDir(p.by, t, 0, _dir);
-    r.launch(_dir.x * launch[0], launch[1], _dir.z * launch[0], limp === Infinity ? 7 : 4);
+    const k = this.launchMul;
+    r.launch(_dir.x * launch[0] * k, launch[1] * k, _dir.z * launch[0] * k, limp === Infinity ? 7 : 4);
   }
 
   step(dt) {

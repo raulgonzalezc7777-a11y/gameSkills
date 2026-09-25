@@ -107,7 +107,7 @@ export const ROSTER = [
   }
 ];
 
-export const ROSTER_BY_ID = {};
+export const ROSTER_BY_ID = Object.create(null);
 for (const f of ROSTER) ROSTER_BY_ID[f.id] = f;
 
 export const pickFighter = (id) => ROSTER_BY_ID[id] || ROSTER[0];

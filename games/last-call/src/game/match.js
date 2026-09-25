@@ -23,29 +23,68 @@ export { ROSTER } from '../characters/roster.js';
 export class Match {
   constructor(ctx, spec0 = 0, spec1 = 1) {
     this.scene = ctx.scene;
+    this.ctx = ctx;
     this.arena = new Arena(ctx);
     this.scene.add(this.arena.group);
+    this.tpcam = new TPCamera(ctx.camera, { arena: this.arena });
+    this.tpcam.setTargets(_camA, _camB);
+    this._offRound = bus.on(EV.ROUND_START, () => this.resetPositions());
+    this.onFighters = null;   // main hooks the effects up to each new pair
+    this.setup({ player: spec0, cpu: spec1 });
+  }
 
-    const [a, b] = [CARD[spec0 ?? 0], CARD[spec1 ?? 1]];
+  // Builds (or rebuilds) everything that depends on who is fighting: the two
+  // fighters, their ragdolls and the junk in the ring, the CPU's brain and
+  // the director. The venue, camera and post stack are kept, so changing
+  // fighters or starting a rematch takes a moment instead of a page reload.
+  //   opts.player / opts.cpu   roster index or id
+  //   opts.outfit              colour overrides for the player's kit
+  //   opts.difficulty          0..1 for the CPU brain
+  //   opts.rounds, opts.roundSeconds
+  //   opts.mods                level modifiers (see meta/levels.js)
+  setup(opts = {}) {
+    this.teardown();
+    this.opts = opts;
+    const pick = (v, d) => (typeof v === 'number' ? CARD[v] : CARD.find((c) => c.id === v)) || CARD[d];
+    const a = { ...pick(opts.player, 0), ...(opts.outfit || {}) };
+    let bSpec = pick(opts.cpu, 1);
+    // A mirror match gets the rival in a different kit so the two read apart.
+    if (bSpec.id === a.id) bSpec = { ...bSpec, tank: '#e8e4d8', trunks: '#2a2f38', shoe: '#e8e4d8' };
     this.player = new Fighter({ ...a, isPlayer: true, facing: 0 }, { arena: this.arena });
-    this.cpu = new Fighter({ ...b, facing: Math.PI }, { arena: this.arena });
+    this.cpu = new Fighter({ ...bSpec, facing: Math.PI }, { arena: this.arena });
     this.player.position.copy(this.arena.spawnPoints[0]);
     this.cpu.position.copy(this.arena.spawnPoints[1]);
     this.cpu.facing = Math.PI;
     this.scene.add(this.player.object, this.cpu.object);
 
     // Physics comedy: both fighters become active ragdolls in one world.
-    this.brawl = new Brawl(this.arena, [this.player, this.cpu]);
-    this.brawl.debris.camera = ctx.camera;
+    this.brawl = new Brawl(this.arena, [this.player, this.cpu], opts.mods);
+    this.brawl.debris.camera = this.ctx.camera;
 
-    this.brain = new Brain(this.cpu, this.player, 0.65);
-    this.tpcam = new TPCamera(ctx.camera, { arena: this.arena });
-    this.tpcam.setTargets(_camA, _camB);
+    this.brain = new Brain(this.cpu, this.player, opts.difficulty ?? 0.65);
 
     // The director owns pacing: hype, Last Call, knockdown counts and rounds.
-    this.director = new Director([this.player, this.cpu]);
+    this.director = new Director([this.player, this.cpu], { rounds: opts.rounds, roundSeconds: opts.roundSeconds });
+    // Combat reaches the director through each fighter's ctx: the Borrachera
+    // pays for itself from the hype meter and counters and props feed it.
+    // Without this link the super never spent the meter and could be chained.
+    for (const f of [this.player, this.cpu]) { f.director = this.director; f.ctx.director = this.director; }
     this.ghost = { l: 100, r: 100 };
     this.running = false;
+    this.onFighters?.(this.player, this.cpu);
+  }
+
+  teardown() {
+    if (!this.player) return;
+    this.onFighters?.(null, null, [this.player, this.cpu]);
+    this.brawl?.dispose();
+    this.director?.dispose();
+    for (const f of [this.player, this.cpu]) {
+      if (f.prop && f.propSys) try { f.propSys.drop(f); } catch { /* already gone */ }
+      this.scene.remove(f.object);
+      f.dispose();
+    }
+    this.player = this.cpu = null;
   }
 
   get round() { return this.director.round; }
@@ -55,6 +94,21 @@ export class Match {
     this.running = true;
     this.director.phase = PHASE.INTRO;
     this.director.phaseTimer = 1.4;
+    bus.emit(EV.ROUND_START, { round: this.director.round });
+  }
+
+  // Every round starts from the corners: the fighters go back to their
+  // spawn points facing each other, and their bodies are put back on their
+  // feet in one step instead of being hauled across the ring by the muscles.
+  resetPositions() {
+    const sp = this.arena.spawnPoints;
+    this.player.position.copy(sp[0]); this.player.facing = 0;
+    this.cpu.position.copy(sp[1]); this.cpu.facing = Math.PI;
+    for (const f of [this.player, this.cpu]) {
+      f.velocity?.set(0, 0, 0);
+      f.downed = 0;
+      f.ragdoll?.requestSnap();
+    }
   }
 
   // The stick is read in screen space: right is right on the screen, up is
