@@ -150,7 +150,11 @@ export class Director {
     }
   }
 
-  get borracheraReady() { return this.hype >= 100; }
+  // Hype is capped at 100 and decays every frame, so '>= 100' was true for
+  // about one frame per fill: the button lit and went dark before a thumb
+  // could reach it. The top of the meter counts, and the super spends what
+  // is there (combat/borrachera.js uses the same floor).
+  get borracheraReady() { return this.hype >= 96; }
 
   spendHype(amount) {
     if (this.hype < amount) return false;

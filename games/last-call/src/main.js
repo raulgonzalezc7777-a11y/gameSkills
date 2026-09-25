@@ -5,6 +5,11 @@ import { PostFX } from './render/postfx.js';
 import { Match } from './game/match.js';
 import { HUD } from './ui/hud.js';
 import { TouchControls, wantsTouch } from './ui/touch.js';
+import { Menu } from './ui/menu.js';
+import { SaveStore } from './meta/save.js';
+import { Progress, BoutTracker } from './meta/progress.js';
+import { OUTFIT_BY_ID, applyFighterStats, applyDrink } from './meta/catalog.js';
+import { levelByN, levelMatchOpts, applyFighterMods } from './meta/levels.js';
 import { VFX, installVFXListeners } from './vfx/index.js';
 import { AudioEngine, installAudioListeners } from './audio/index.js';
 import { input } from './core/input.js';
@@ -40,11 +45,12 @@ const ctx = { scene, renderer, camera, quality };
 const match = new Match(ctx);
 // A thumb on glass is slower and less exact than a keyboard, so the bartender
 // who fights you on a phone is a touch slower to react and to swing.
-if (isTouch && match.brain) {
-  match.brain.diff = 0.5;
-  match.brain.reaction = 0.34 - 0.5 * 0.18 + 0.06;
-  match.brain.aggression *= 0.85;
-}
+const easeForTouch = (brain) => {
+  if (!isTouch || !brain) return;
+  brain.reaction += 0.06;
+  brain.aggression *= 0.85;
+};
+easeForTouch(match.brain);
 // Individual passes can be switched off from the URL (?off=ssao,ssr,dof,mb,bloom)
 // so a bad frame can be bisected instead of guessed at.
 const off = new Set((qsBoot.get('off') || '').split(',').filter(Boolean));
@@ -60,26 +66,37 @@ const hud = new HUD().mount(document.getElementById('ui-root'));
 hud.bindWorld(camera, match);
 hud._debug = qsBoot.has('debug');
 const touch = new TouchControls().mount(document.getElementById('ui-root'), {
-  onPause: () => { if (started) hud.setPaused(!hud.paused); }
+  onPause: () => { if (fighting) hud.setPaused(!hud.paused); }
 });
+
+// Progress lives in this browser only (see meta/save.js).
+const store = new SaveStore();
+const progress = new Progress(store);
+let fighting = false;       // a bout is on screen (menus are closed)
+let tracker = null, bout = null;
 let touchMode = isTouch;
 const markTouch = () => document.documentElement.classList.add('touch-device');
 if (touchMode) markTouch();
 // A buzz in the hand for every blow: short when you land one, longer when
 // you take one, a long rumble for a knockout.
-const buzz = (p) => { if (touchMode) try { navigator.vibrate?.(p); } catch { /* unsupported */ } };
+const buzz = (p) => { if (touchMode && store.data.settings.vibrate) try { navigator.vibrate?.(p); } catch { /* unsupported */ } };
 bus.on(EV.HIT_LANDED, (p) => {
   if (p.target === match.player) buzz(p.damage >= 9 ? 45 : 25);
   else if (p.attacker === match.player) buzz(p.damage >= 9 ? 22 : 10);
 });
 bus.on(EV.KO, () => buzz([80, 40, 140]));
-window.addEventListener('touchstart', () => { if (!touchMode) { touchMode = true; markTouch(); if (started) touch.show(true); } }, { passive: true });
+window.addEventListener('touchstart', () => { if (!touchMode) { touchMode = true; markTouch(); if (fighting) touch.show(true); } }, { passive: true });
 
 // Effects listen to the event bus, so combat never calls them directly.
 const vfx = new VFX({ scene, camera, renderer, quality, floorY: match.arena.floorY });
 installVFXListeners(vfx);
 vfx.trackFighter(match.player);
 vfx.trackFighter(match.cpu);
+// Each rebuilt pair of fighters gets its trails; the old pair lets go of them.
+match.onFighters = (a, b, old) => {
+  if (old) { for (const f of old) vfx.trails?.untrack?.(f); return; }
+  vfx.trackFighter(a); vfx.trackFighter(b);
+};
 // No soft-particle depth: particles are drawn inside the scene pass, and the
 // only depth texture is the one that pass is writing. Sampling it there is a
 // framebuffer feedback loop, which WebGL answers by dropping the draw, so the
@@ -143,36 +160,109 @@ applyQuality(qualityName);
 
 let started = false;
 let autoAcc = 0, autoFrames = 0;
+
+// ---------------------------------------------------------------- flow ---
+// title -> menu -> bout -> results -> menu. The venue and the camera keep
+// running behind every menu; only the fighters are rebuilt between bouts.
+const menu = new Menu(document.getElementById('ui-root'), {
+  progress, store,
+  onPlay: (opts) => startBout(opts),
+  onSettings: (g) => applySettings(g)
+});
+
+function applyAudioSettings() {
+  const m = audio.mixer;
+  if (!m?.buses) return;
+  const g = store.data.settings;
+  for (const [k, b] of Object.entries(m.buses)) {
+    if (b._base === undefined) b._base = b.gain.value;
+    b.gain.value = b._base * (k === 'music' ? (g.music ? 1 : 0) : (g.sfx ? 1 : 0));
+  }
+}
+function applySettings(g) {
+  applyAudioSettings();
+  if (g.quality === 'auto') { autoPicked = autoQuality; applyQualityFromMenu(isTouch ? 'phone' : 'high'); }
+  else if (QUALITY_PRESETS[g.quality]) { autoPicked = false; applyQualityFromMenu(g.quality); }
+}
+
 function start(fromGesture) {
   if (started) return;
   started = true;
-  hud.start();
-  match.begin();
-  touch.show(touchMode);
+  hud.hideTitle();
   // On a phone, take the whole screen if the page is allowed to. Embedded
   // pages often are not, and the game plays the same either way.
   if (fromGesture && touchMode) {
     try { document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })?.catch?.(() => {}); } catch { /* not allowed here */ }
   }
-  // Pointer lock only ever succeeds inside a real user gesture. Asking for it
-  // anywhere else throws, which would pollute every automated capture log with
-  // an error that is not a bug.
-  // Inside a sandboxed iframe pointer lock can be refused; the game is fully
-  // playable on the keyboard without it, so a refusal is not an error.
-  if (fromGesture && !touchMode) Promise.resolve().then(() => input.requestLock(canvas)).catch(() => {});
   // Audio only exists once a real gesture has happened. An automated capture
   // run stays silent, which is exactly what it wants.
-  if (fromGesture) audio.init().then(() => audio.music.start()).catch(() => {});
+  if (fromGesture) audio.init().then(() => { applyAudioSettings(); audio.music.start(); }).catch(() => {});
+  if (store.data.settings.quality !== 'auto' && !qsBoot.has('q')) applySettings(store.data.settings);
+  // Test and demo links can jump straight into a quick bout.
+  if (qsBoot.has('quick') || qsBoot.has('auto')) startBout({ mode: 'quick', cpu: 'dez', difficulty: 0.6 });
+  else menu.show('home');
 }
+
+// Builds the bout the menu asked for and rings the bell.
+function startBout(opts) {
+  const s = store.data;
+  const level = opts.level ? levelByN(opts.level) : null;
+  const lvOpts = level ? levelMatchOpts(level) : {};
+  const drink = progress.consumeDrink();
+  bout = { ...opts, drink, replay: { ...opts } };
+  match.setup({
+    player: s.sel.fighter,
+    outfit: OUTFIT_BY_ID[s.sel.outfit]?.colors || null,
+    cpu: opts.cpu,
+    difficulty: opts.difficulty,
+    mods: lvOpts.mods || [],
+    roundSeconds: lvOpts.roundSeconds
+  });
+  easeForTouch(match.brain);
+  applyFighterStats(match.player, match.player.spec.id);
+  applyFighterStats(match.cpu, match.cpu.spec.id);
+  applyFighterMods(match, lvOpts.mods);
+  if (drink) applyDrink(match.player, match.director, drink);
+  tracker?.dispose();
+  tracker = new BoutTracker(match);
+  menu.hide();
+  hud.enterFight();
+  touch.show(touchMode);
+  fighting = true;
+  match.begin();
+  if (!touchMode) Promise.resolve().then(() => input.requestLock(canvas)).catch(() => {});
+}
+
+// The bout is over: pay out and show the results.
+function endBout({ quit = false, winner = 1, wins = [0, 0] } = {}) {
+  if (!fighting) return;
+  fighting = false;
+  const won = !quit && winner === 0;
+  const settle = progress.settle(tracker, {
+    won, quit, level: bout?.level || null,
+    roundsLost: tracker.c.roundsLost, healthLeft: match.player.health
+  });
+  tracker.dispose(); tracker = null;
+  match.running = false;
+  hud.leaveFight();
+  touch.show(false);
+  try { document.exitPointerLock?.(); } catch { /* not locked */ }
+  if (quit) { menu.show('home'); return; }
+  menu.show('home');
+  menu.go('results', { won, score: `${wins[0]} - ${wins[1]}`, settle, level: bout?.level || null, replay: bout.replay });
+}
+bus.on(EV.MATCH_END, (p) => setTimeout(() => endBout(p), 2800));
+hud.onQuit = () => { hud.setPaused(false); endBout({ quit: true }); };
+
 document.getElementById('title').addEventListener('click', () => start(true));
-window.addEventListener('keydown', (e) => { if (e.code === 'Enter') start(true); });
+window.addEventListener('keydown', (e) => { if (e.code === 'Enter' && !started) start(true); });
 
 // The review harness and demo links boot straight into the fight.
 const qs = qsBoot;
 const noPost = qs.has('nopost');
 if (qs.has('auto')) setTimeout(() => start(false), 120);
 window.__start = start;
-canvas.addEventListener('click', () => { try { const r = canvas.requestPointerLock?.(); r?.catch?.(() => {}); } catch { /* no lock available */ } });
+canvas.addEventListener('click', () => { if (!fighting || touchMode) return; try { const r = canvas.requestPointerLock?.(); r?.catch?.(() => {}); } catch { /* no lock available */ } });
 
 input.attach();
 
@@ -196,6 +286,7 @@ function frame(nowMs) {
   if (hud.paused) accumulator = 0;
   while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
     match.update(FIXED_DT);
+    tracker?.tick(FIXED_DT, match.director.phase === 'fight');
     accumulator -= FIXED_DT;
     steps++;
   }
@@ -204,9 +295,9 @@ function frame(nowMs) {
   // was actually consumed and never run more than once per displayed frame.
   vfx.update(Math.min(dt, MAX_STEPS * FIXED_DT), camera.position);
   audio.update(time.rawDt);
-  audio.setDrunk(match.player.drunk01);
+  audio.setDrunk(fighting ? match.player.drunk01 : 0);
   audio.setHype(match.director.hype / 100);
-  post.params.drunk = match.player.drunk01 * 0.85;
+  post.params.drunk = fighting ? match.player.drunk01 * 0.85 : 0;
   post.params.focusDistance = match.focusDistance;
   renderer.info.reset();
   // ?nopost renders the lit scene straight to the screen. When a frame looks
@@ -243,4 +334,10 @@ function frame(nowMs) {
 requestAnimationFrame(frame);
 
 // Expose for the automated visual review harness and for debugging.
-window.__game = { scene, camera, renderer, match, post, hud, vfx, audio, time, CFG, THREE, input };
+// The debug handle is for development and the test harness only. A shipped
+// page does not hand every visitor a console shortcut to the save and the
+// wallet (it cannot stop a determined cheat on a client-side game, but it
+// does not make it one line either).
+if (import.meta.env?.DEV || qsBoot.has('test')) {
+  window.__game = { scene, camera, renderer, match, post, hud, vfx, audio, time, CFG, THREE, input, store, progress, menu, get tracker() { return tracker; } };
+}

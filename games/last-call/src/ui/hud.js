@@ -72,6 +72,7 @@ export class HUD {
         <div class="panel">
           <h2>PAUSA</h2>
           <button id="resume" class="big">Seguir peleando</button>
+          <button id="quit" class="big ghost">Abandonar</button>
           <div class="touch-help t-only">
             <span><b>Joystick</b> moverte (a fondo corres)</span>
             <span><b>GOLPE</b> toca seguido para el combo</span>
@@ -103,7 +104,7 @@ export class HUD {
           <div class="eyebrow">EL GARITO · 03:47</div>
           <h1>LAST CALL</h1>
           <div class="sub">Pelea de bar a la hora de cierre</div>
-          <div class="cta"><span class="k-only">Haz clic para pelear</span><span class="t-only">Toca para pelear</span></div>
+          <div class="cta"><span class="k-only">Haz clic para entrar</span><span class="t-only">Toca para entrar</span></div>
           <div class="quality" id="quality">
             <span class="qlabel">Calidad</span>
             <button data-q="auto" class="on">Auto</button>
@@ -141,7 +142,7 @@ export class HUD {
     };
 
     $('resume').addEventListener('click', () => this.setPaused(false));
-    $('again').addEventListener('click', () => location.reload());
+    $('quit')?.addEventListener('click', () => this.onQuit?.());
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape' && this._started && !this._over) this.setPaused(!this.paused);
     });
@@ -223,14 +224,10 @@ export class HUD {
       if (m === null) return;
       if (m) this.announce(m[0], m[1]); else this.announce(p.announce, '');
     });
-    bus.on(EV.MATCH_END, ({ winner, wins }) => {
+    bus.on(EV.MATCH_END, ({ winner }) => {
       this._over = true;
-      const w = winner === 0 ? this.match?.player : this.match?.cpu;
-      setTimeout(() => {
-        this.els.resultTitle.textContent = winner === 0 ? '¡HAS GANADO!' : 'HAS PERDIDO';
-        this.els.resultScore.textContent = `${plainName(w?.spec?.name || '')} · ${wins[0]} - ${wins[1]}`;
-        this.els.result.classList.remove('hide');
-      }, 2600);
+      // The verdict banner; the payout screen belongs to the menu (ui/menu.js).
+      setTimeout(() => this.announce(winner === 0 ? '¡VICTORIA!' : 'DERROTA', winner === 0 ? 'el bar es tuyo' : 'otra ronda será', winner === 0 ? 'ko' : ''), 700);
     });
   }
 
@@ -340,6 +337,25 @@ export class HUD {
     this._toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
   }
 
+  hideTitle() { this.els.title.classList.add('hide'); }
+
+  // A bout begins: fresh HUD, nothing left over from the last one.
+  enterFight() {
+    this._over = false;
+    this.setPaused(false);
+    this.els.result?.classList.add('hide');
+    for (const el of this._pops) { el._live = false; el.style.display = 'none'; }
+    this.els.banner.className = 'banner';
+    this.start();
+  }
+
+  leaveFight() {
+    this._started = false;
+    this.setPaused(false);
+    this.els.hud.classList.remove('on');
+    for (const el of this._pops) { el._live = false; el.style.display = 'none'; }
+  }
+
   start() {
     this._started = true;
     this.els.title.classList.add('hide');
@@ -387,9 +403,9 @@ export class HUD {
       if (e._name !== f.name) {
         e._name = f.name;
         e.name.textContent = plainName(f.name);
-        e.nick.textContent = nickname(f.name);
+        e.nick.textContent = f.nick || nickname(f.name);
         e.badge.textContent = initials(f.name);
-        if (f.accent) e.card.style.setProperty('--accent', f.accent);
+        if (/^#[0-9a-f]{6}$/i.test(f.accent || '')) e.card.style.setProperty('--accent', f.accent);
       }
     }
     this.els.timer.textContent = String(Math.max(0, Math.ceil(s.clock))).padStart(2, '0');

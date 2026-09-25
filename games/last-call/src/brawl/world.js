@@ -47,6 +47,7 @@ export class BrawlWorld {
       w.addBody(b);
     }
     this.ringRadius = R;
+    this.ceiling = floorY + ((arena?.room?.h ?? 4.7) - 0.6);
     this.floorY = floorY;
   }
 
@@ -58,6 +59,11 @@ export class BrawlWorld {
   // Returns the hardest outward speed it caught, so the ropes can flash.
   contain(body, margin) {
     const p = body.position, lim = this.ringRadius - margin;
+    // Floor and ceiling too: nothing sinks through the boards, and nothing
+    // sails up through the roof when the gravity is turned down.
+    const v0 = body.velocity;
+    if (p.y < this.floorY + 0.03) { p.y = this.floorY + 0.03; if (v0.y < 0) v0.y *= -0.3; }
+    if (p.y > this.ceiling) { p.y = this.ceiling; if (v0.y > 0) v0.y *= -0.4; }
     const r = Math.hypot(p.x, p.z);
     if (r <= lim) return 0;
     const nx = p.x / r, nz = p.z / r;

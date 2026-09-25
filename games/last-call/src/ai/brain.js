@@ -29,6 +29,21 @@ export class Brain {
     const i = this.intent;
     i.action = null;
     i.block = false;
+    i.drink = false;
+    i.special = false;
+
+    // The crowd's meter is shared: when it is full the CPU goes for the
+    // Borrachera too, so filling it is a race and not a free super.
+    if (inRange && f.director?.borracheraReady && rng.chance(0.25 + this.diff * 0.35)) {
+      i.special = true;
+      return i;
+    }
+    // A drink when it is tired or hurting and has room to swallow.
+    if (dist > 2.2 && ((f.stamina ?? 100) < 35 || (f.health ?? 100) < 45) && (f.drunk ?? 0) < 85 && rng.chance(0.3)) {
+      i.drink = true;
+      i.moveX = 0; i.moveY = -0.3;
+      return i;
+    }
 
     // Drunk fighters commit to bad ideas.
     const wantAttack = this.aggression + (inRange ? 0.5 : -0.3) + drunkNoise * 0.35 + rng.range(-0.25, 0.25);

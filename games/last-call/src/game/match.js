@@ -14,6 +14,7 @@ import { clamp01, expDamp } from '../core/math.js';
 import { ROSTER as CARD } from '../characters/roster.js';
 import { Director, PHASE } from './director.js';
 import { Brawl } from '../brawl/index.js';
+import { FIGHTER_BY_ID } from '../meta/catalog.js';
 
 const _fwd = new THREE.Vector3();
 
@@ -185,7 +186,7 @@ export class Match {
     if (intent.drink && typeof this.player.drink === 'function' && !this.player._ownsDrink) this.player.drink();
 
     const cpuIntent = this.brain.update(dt);
-    if (!fighting) { cpuIntent.moveX = 0; cpuIntent.moveY = 0; cpuIntent.action = null; }
+    if (!fighting) { cpuIntent.moveX = 0; cpuIntent.moveY = 0; cpuIntent.action = null; cpuIntent.drink = false; cpuIntent.special = false; }
     this.player.update(dt, intent, this.cpu);
     this.cpu.update(dt, cpuIntent, this.player);
     this.brawl.step(dt);
@@ -206,8 +207,8 @@ export class Match {
 
   hudState() {
     return {
-      l: { name: this.player.spec.name, accent: this.player.spec.tank, health: this.player.health, ghost: this.ghost.l, stamina: this.player.stamina, drunk: this.player.drunk },
-      r: { name: this.cpu.spec.name, accent: this.cpu.spec.tank, health: this.cpu.health, ghost: this.ghost.r, stamina: this.cpu.stamina, drunk: this.cpu.drunk },
+      l: { name: this.player.spec.name, nick: FIGHTER_BY_ID[this.player.spec.id]?.nick, accent: this.player.spec.tank, health: this.player.health, ghost: this.ghost.l, stamina: this.player.stamina, drunk: this.player.drunk },
+      r: { name: this.cpu.spec.name, nick: FIGHTER_BY_ID[this.cpu.spec.id]?.nick, accent: this.cpu.spec.tank, health: this.cpu.health, ghost: this.ghost.r, stamina: this.cpu.stamina, drunk: this.cpu.drunk },
       clock: this.clock, round: this.round,
       wins: this.director.wins, hype: this.director.hype,
       lastCall: this.director.lastCall, phase: this.director.phase

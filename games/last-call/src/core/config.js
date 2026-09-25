@@ -10,7 +10,9 @@ export const CFG = {
     fogDensity: 0.021
   },
   post: {
-    bloom: { strength: 0.9, radius: 0.78, threshold: 1.05 },
+    // Tuned after the bloom upsample was fixed: before that its draws were
+    // dropped and these numbers were set against a bloom that barely worked.
+    bloom: { strength: 0.5, radius: 0.78, threshold: 2.2 },
     ssao: { radius: 0.55, intensity: 1.15, bias: 0.028 },
     dof: { focusDistance: 5.0, aperture: 0.0022, maxBlur: 0.007, focusRange: 1.6, nearRange: 2.6, farRange: 16.0 },
     motionBlur: { strength: 0.62, samples: 12 },
