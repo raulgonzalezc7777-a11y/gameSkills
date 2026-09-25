@@ -319,7 +319,7 @@ export class HUD {
     this.els.quality?.querySelectorAll('button').forEach((b) => {
       b.classList.toggle('on', auto ? b.dataset.q === 'auto' : b.dataset.q === name);
     });
-    if (this._qualityShown && this._qualityShown !== name && auto) this.toast(`Calidad bajada a ${name} para mantener la fluidez`);
+    if (this._qualityShown && this._qualityShown !== name && auto) this.toast(`Calidad bajada a ${({ low: 'baja', phone: 'móvil', medium: 'media', high: 'alta', cinematic: 'cine' })[name] || name} para mantener la fluidez`);
     this._qualityShown = name;
   }
 
