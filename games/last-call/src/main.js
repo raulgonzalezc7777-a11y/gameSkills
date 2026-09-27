@@ -10,6 +10,10 @@ import { SaveStore } from './meta/save.js';
 import { Progress, BoutTracker } from './meta/progress.js';
 import { OUTFIT_BY_ID, applyFighterStats, applyDrink } from './meta/catalog.js';
 import { levelByN, levelMatchOpts, applyFighterMods } from './meta/levels.js';
+import { ReplayRecorder, ReplayPlayer } from './game/replay.js';
+import { ClipMaker, shareFile } from './game/clip.js';
+import { captionFor } from './game/captions.js';
+import { Coach } from './ui/coach.js';
 import { VFX, installVFXListeners } from './vfx/index.js';
 import { AudioEngine, installAudioListeners } from './audio/index.js';
 import { input } from './core/input.js';
@@ -200,16 +204,21 @@ function start(fromGesture) {
   if (store.data.settings.quality !== 'auto' && !qsBoot.has('q')) applySettings(store.data.settings);
   // Test and demo links can jump straight into a quick bout.
   if (qsBoot.has('quick') || qsBoot.has('auto')) startBout({ mode: 'quick', cpu: 'dez', difficulty: 0.6 });
+  // A first-time player is punching one tap after the title, with a coach
+  // showing the ropes; the menus can wait until they have had some fun.
+  else if (store.data.stats.matches === 0 && !qsBoot.has('menu')) startBout({ mode: 'level', level: 1, cpu: 'dez', difficulty: 0.3, tutorial: true });
   else menu.show('home');
 }
 
 // Builds the bout the menu asked for and rings the bell.
+let recorder = null, replayer = null, clip = null, replaying = false, lastDown = null, lastHit = null;
+const coach = new Coach(document.getElementById('ui-root'));
 function startBout(opts) {
   const s = store.data;
   const level = opts.level ? levelByN(opts.level) : null;
   const lvOpts = level ? levelMatchOpts(level) : {};
   const drink = progress.consumeDrink();
-  bout = { ...opts, drink, replay: { ...opts } };
+  bout = { ...opts, drink, replay: { ...opts, tutorial: false } };
   match.setup({
     player: s.sel.fighter,
     outfit: OUTFIT_BY_ID[s.sel.outfit]?.colors || null,
@@ -225,33 +234,101 @@ function startBout(opts) {
   if (drink) applyDrink(match.player, match.director, drink);
   tracker?.dispose();
   tracker = new BoutTracker(match);
+  recorder = new ReplayRecorder(match);
+  replayer = new ReplayPlayer(recorder, camera);
+  lastDown = lastHit = null;
   menu.hide();
   hud.enterFight();
   touch.show(touchMode);
   fighting = true;
   match.begin();
+  if (opts.tutorial) coach.start(match, touchMode); else coach.stop();
   if (!touchMode) Promise.resolve().then(() => input.requestLock(canvas)).catch(() => {});
 }
 
-// The bout is over: pay out and show the results.
+// What the replay caption needs to know about the finish.
+bus.on(EV.HIT_LANDED, (p) => { lastHit = { move: p.move?.name || '', target: p.target, t: performance.now() }; });
+bus.on('borrachera:start', (p) => { if (lastHit) lastHit.super = p.fighter; else lastHit = { super: p.fighter, t: performance.now() }; });
+bus.on(EV.KO, (p) => { lastDown = { fighter: p.fighter, t: performance.now() }; });
+bus.on(EV.KNOCKDOWN, (p) => { lastDown = { fighter: p.fighter, t: performance.now() }; });
+bus.on('brawl:ropes', (p) => { if (lastHit && p.fighter === lastHit.target) lastHit.ropes = true; });
+
+// The bout is over. Pay out straight away (so nothing can be lost to a
+// closed tab during the replay), then replay a knockout finish, then show
+// the results.
 function endBout({ quit = false, winner = 1, wins = [0, 0] } = {}) {
   if (!fighting) return;
   fighting = false;
+  coach.stop();
   const won = !quit && winner === 0;
   const settle = progress.settle(tracker, {
     won, quit, level: bout?.level || null,
     roundsLost: tracker.c.roundsLost, healthLeft: match.player.health
   });
   tracker.dispose(); tracker = null;
-  match.running = false;
-  hud.leaveFight();
   touch.show(false);
   try { document.exitPointerLock?.(); } catch { /* not locked */ }
-  if (quit) { menu.show('home'); return; }
-  menu.show('home');
-  menu.go('results', { won, score: `${wins[0]} - ${wins[1]}`, settle, level: bout?.level || null, replay: bout.replay });
+  if (quit) { match.running = false; hud.leaveFight(); menu.show('home'); return; }
+  const result = { won, score: `${wins[0]} - ${wins[1]}`, settle, level: bout?.level || null, replay: bout.replay };
+  const byKO = lastDown && performance.now() - lastDown.t < 2500;
+  if (!byKO) {
+    setTimeout(() => showResults(result), 2600);
+    return;
+  }
+  const loser = won ? match.cpu : match.player, winnerF = won ? match.player : match.cpu;
+  result.caption = captionFor({
+    playerWon: won,
+    move: lastHit?.move,
+    super: !!lastHit?.super && lastHit.super === winnerF,
+    ropes: !!lastHit?.ropes,
+    winnerDrunk: winnerF.drunk01 ?? 0
+  });
+  result.sub = `${plainName(winnerF.spec.name)} vs ${plainName(loser.spec.name)}`;
+  // Let the body land, then roll the replay.
+  setTimeout(() => playReplay(result, true), 1500);
 }
-bus.on(EV.MATCH_END, (p) => setTimeout(() => endBout(p), 2800));
+
+const plainName = (n) => String(n).replace(/\s*"[^"]*"\s*/g, ' ').replace(/\s+/g, ' ').trim();
+
+function playReplay(result, record) {
+  match.running = false;
+  // No thumbs on screen during the replay, so the picture uses all of it.
+  camera.clearViewOffset(); camera.updateProjectionMatrix();
+  hud.leaveFight();
+  hud.showReplay(result.caption, result.sub, () => replayer.stop());
+  replaying = true;
+  if (record) {
+    clip = new ClipMaker(canvas, audio);
+    clip.begin(result.caption, result.sub);
+  }
+  audio.surgeCrowd?.('big', 1.4);
+  replayer.start({
+    onEnd: async () => {
+      replaying = false;
+      onResize();
+      hud.hideReplay();
+      if (record && clip) { await clip.end(); result.clip = clip; }
+      showResults(result);
+    }
+  });
+}
+
+function showResults(result) {
+  match.running = false;
+  hud.leaveFight();
+  menu.show('home');
+  menu.go('results', {
+    ...result,
+    share: result.clip ? {
+      video: !!result.clip.video,
+      photo: !!result.clip.photo,
+      shareVideo: () => shareFile(result.clip.video.blob, `last-call-ko.${result.clip.video.ext}`, `${result.caption} 🍺🥊 #LastCall`),
+      sharePhoto: () => shareFile(result.clip.photo, 'last-call-ko.jpg', `${result.caption} 🍺🥊 #LastCall`),
+      watchAgain: () => { menu.hide(); playReplay(result, false); }
+    } : null
+  });
+}
+bus.on(EV.MATCH_END, (p) => endBout(p));
 hud.onQuit = () => { hud.setPaused(false); endBout({ quit: true }); };
 
 document.getElementById('title').addEventListener('click', () => start(true));
@@ -284,9 +361,12 @@ function frame(nowMs) {
   accumulator += dt;
   let steps = 0;
   if (hud.paused) accumulator = 0;
+  if (replaying) { replayer.update(dt); accumulator = 0; }
   while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
     match.update(FIXED_DT);
     tracker?.tick(FIXED_DT, match.director.phase === 'fight');
+    if (match.running) recorder?.record(FIXED_DT);
+    coach.update(FIXED_DT);
     accumulator -= FIXED_DT;
     steps++;
   }
@@ -309,6 +389,11 @@ function frame(nowMs) {
     renderer.render(scene, camera);
   } else {
     post.render(time.rawDt);
+  }
+  // The clip is drawn from the frame just rendered, in the same task, which
+  // is the only time a WebGL canvas can be read without keeping its buffer.
+  if (replaying && clip?.live && replayer?.active) {
+    clip.draw(replayer.t / replayer.dur, replayer.src >= replayer.peak);
   }
   touch.update(match.director.borracheraReady);
   hud.update(dt, { ...match.hudState(), fps: time.fps, tris: renderer.info.render.triangles + ' tris' });

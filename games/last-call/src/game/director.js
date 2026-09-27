@@ -119,7 +119,7 @@ export class Director {
         this.clock = Math.max(0, this.clock - dt);
         // Last Call: the final stretch escalates on purpose, so every round
         // peaks instead of petering out.
-        if (!this.lastCall && this.clock <= 20) {
+        if (!this.lastCall && this.clock <= Math.min(20, this.roundSeconds * 0.34)) {
           this.lastCall = true;
           this.damageMul = 1.35;
           for (const f of this.fighters) f.drunk = Math.min(CFG.fighter.drunk.max, f.drunk + 20);

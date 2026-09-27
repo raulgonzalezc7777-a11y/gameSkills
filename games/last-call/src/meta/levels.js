@@ -8,7 +8,7 @@ export const MODS = {
   cuerdasLocas: { name: 'Cuerdas locas', desc: 'Las cuerdas rebotan como camas elásticas y todo sale volando más.' },
   lluviaBotellas: { name: 'Lluvia de botellas', desc: 'El público tira botellas a cualquiera.' },
   lunar: { name: 'Gravedad lunar', desc: 'Alguien ha echado algo en las copas. Flotáis.' },
-  ultimaRonda: { name: 'Última ronda', desc: 'Asaltos de 45 segundos.' },
+  ultimaRonda: { name: 'Última ronda', desc: 'Asaltos de 35 segundos.' },
   borrachos: { name: 'Barra libre', desc: 'Los dos empezáis bien cargados.' },
   jefe: { name: 'Jefe del bar', desc: 'El rival aguanta mucho más y pega más fuerte.' }
 };
@@ -43,7 +43,7 @@ export function levelMatchOpts(level) {
     cpu: level.cpu,
     difficulty: level.diff,
     mods: [...level.mods],
-    roundSeconds: level.mods.includes('ultimaRonda') ? 45 : undefined
+    roundSeconds: level.mods.includes('ultimaRonda') ? 35 : undefined
   };
 }
 

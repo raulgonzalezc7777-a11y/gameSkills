@@ -378,6 +378,23 @@ export class Menu {
       resetBtn);
   }
 
+  // The K.O. clip: send it, or watch it again.
+  shareBlock(arg) {
+    const sh = arg.share;
+    const say = (r) => {
+      if (r === 'shared') this.toast('¡Enviado!', 'good');
+      else if (r === 'downloaded') this.toast('Guardado en tu dispositivo', 'good');
+      else if (r === 'failed') this.toast('Este navegador no deja compartir', 'bad');
+    };
+    return h('div', { class: 'm-share' },
+      h('div', { class: 'm-eyebrow' }, 'TU K.O. EN VÍDEO'),
+      h('p', { class: 'm-cap' }, `“${arg.caption}”`),
+      h('div', { class: 'm-share-row' },
+        sh.video ? h('button', { class: 'm-btn gold', type: 'button', on: { click: async () => say(await sh.shareVideo()) } }, 'COMPARTIR VÍDEO') : null,
+        sh.photo ? h('button', { class: 'm-btn', type: 'button', on: { click: async () => say(await sh.sharePhoto()) } }, 'COMPARTIR FOTO') : null,
+        h('button', { class: 'm-btn ghost', type: 'button', on: { click: () => sh.watchAgain() } }, 'VER OTRA VEZ')));
+  }
+
   // ------------------------------------------------------------- results ---
   // After a bout: the verdict, the stars, every line of the payout counted
   // up, the XP bar and whatever unlocked. arg = { won, score, settle, level }.
@@ -398,6 +415,7 @@ export class Menu {
       settle.levelUp ? h('div', { class: 'm-levelup' }, `¡SUBES A NIVEL ${lv.lvl}! +${settle.levelUp}`) : null,
       h('div', { class: 'm-xp' }, h('span', null, `NV ${lv.lvl} · ${lv.rank}`), h('i', { class: 'xp' }, h('u', { style: { width: `${Math.round((lv.into / lv.need) * 100)}%` } }))),
       settle.achieved.map((a) => h('div', { class: 'm-unlock' }, '🏆 ', a.name, ' ', h('small', null, `+${a.reward}`))),
+      arg.share ? this.shareBlock(arg) : null,
       h('div', { class: 'm-actions' },
         next && this.p.isUnlocked(next.n) ? h('button', { class: 'm-play', type: 'button', on: { click: () => this.go('locker', { mode: 'level', level: next.n }) } }, h('b', null, 'SIGUIENTE NIVEL')) : null,
         h('button', { class: next ? 'm-btn wide' : 'm-play', type: 'button', on: { click: () => this.onPlay({ ...arg.replay }) } }, next ? 'REPETIR' : h('b', null, 'REVANCHA')),

@@ -339,6 +339,25 @@ export class HUD {
 
   hideTitle() { this.els.title.classList.add('hide'); }
 
+  // The instant replay's overlay: a REPETICIÓN tag, the caption, and a tap
+  // anywhere to skip.
+  showReplay(caption, sub, onSkip) {
+    if (!this._replay) {
+      const r = document.createElement('div');
+      r.className = 'replay';
+      r.innerHTML = '<div class="rp-tag">● REPETICIÓN</div><div class="rp-cap"></div><div class="rp-sub"></div><div class="rp-skip">Toca para saltar</div>';
+      this.root.append(r);
+      this._replay = r;
+    }
+    const r = this._replay;
+    r.querySelector('.rp-cap').textContent = caption || '';
+    r.querySelector('.rp-sub').textContent = sub || '';
+    r.onclick = () => onSkip?.();
+    r.classList.remove('hide');
+    r.classList.remove('on'); void r.offsetWidth; r.classList.add('on');
+  }
+  hideReplay() { this._replay?.classList.add('hide'); }
+
   // A bout begins: fresh HUD, nothing left over from the last one.
   enterFight() {
     this._over = false;
@@ -351,6 +370,7 @@ export class HUD {
 
   leaveFight() {
     this._started = false;
+    this.els.banner.className = 'banner';
     this.setPaused(false);
     this.els.hud.classList.remove('on');
     for (const el of this._pops) { el._live = false; el.style.display = 'none'; }

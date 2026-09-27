@@ -12,7 +12,7 @@ export const CFG = {
   post: {
     // Tuned after the bloom upsample was fixed: before that its draws were
     // dropped and these numbers were set against a bloom that barely worked.
-    bloom: { strength: 0.5, radius: 0.78, threshold: 2.2 },
+    bloom: { strength: 0.4, radius: 0.78, threshold: 3.2 },
     ssao: { radius: 0.55, intensity: 1.15, bias: 0.028 },
     dof: { focusDistance: 5.0, aperture: 0.0022, maxBlur: 0.007, focusRange: 1.6, nearRange: 2.6, farRange: 16.0 },
     motionBlur: { strength: 0.62, samples: 12 },
@@ -57,7 +57,8 @@ export const CFG = {
       stumbleThreshold: 72
     }
   },
-  match: { rounds: 3, roundSeconds: 99, ko: { countSeconds: 10 } },
+  // Short rounds: a phone session is a bus stop, not an evening.
+  match: { rounds: 3, roundSeconds: 60, ko: { countSeconds: 10 } },
   time: { hitstopMax: 0.18, slowmoScale: 0.22 },
   audio: { master: 0.85, music: 0.5, sfx: 0.9, crowd: 0.55 }
 };
