@@ -156,6 +156,15 @@ export async function shareFile(blob, name, text) {
   } catch (e) {
     if (e?.name === 'AbortError') return 'cancelled';
   }
+  // Inside the claude.ai viewer a page cannot download on its own; the
+  // viewer's downloads capability asks the player and saves the file.
+  try {
+    const dl = window.claude?.use ? await window.claude.use('downloads') : null;
+    if (dl) {
+      try { await dl.save({ filename: name, data: blob }); return 'downloaded'; }
+      catch (e) { return e?.code === 'declined' ? 'cancelled' : 'failed'; }
+    }
+  } catch { /* not in a viewer: fall through to a plain download */ }
   try {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
