@@ -172,7 +172,12 @@ function onResize() {
 window.addEventListener('resize', onResize);
 // Compile every shader now, off the critical path where the browser allows
 // it, so the first punch, spark or replay does not stall a frame on a phone.
-setTimeout(() => { try { (renderer.compileAsync?.(scene, camera) ?? Promise.resolve(renderer.compile(scene, camera))).catch(() => {}); } catch { /* compiled lazily instead */ } }, 0);
+setTimeout(() => {
+  try {
+    if (renderer.extensions.has('KHR_parallel_shader_compile') && renderer.compileAsync) renderer.compileAsync(scene, camera).catch(() => {});
+    else renderer.compile(scene, camera);
+  } catch { /* compiled lazily instead */ }
+}, 0);
 onResize();
 applyQuality(qualityName);
 
