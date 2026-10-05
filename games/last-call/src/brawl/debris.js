@@ -100,6 +100,7 @@ function buildBody(type, mat) {
   const s = SPEC[type];
   const b = new CANNON.Body({
     mass: s.mass, material: mat, linearDamping: 0.05, angularDamping: 0.12,
+    allowSleep: true, sleepSpeedLimit: 0.12, sleepTimeLimit: 0.5,
     collisionFilterGroup: GROUP.PROP, collisionFilterMask: -1
   });
   if (type === 'bottle') {
@@ -170,6 +171,7 @@ export class Debris {
     b.position.set(Math.cos(spec.a) * spec.r + (spec.dx || 0), y, Math.sin(spec.a) * spec.r + (spec.dz || 0));
     b.quaternion.setFromEuler(0, rng.range(0, Math.PI * 2), 0);
     b.velocity.setZero(); b.angularVelocity.setZero();
+    b.wakeUp?.();
     b.force.setZero(); b.torque.setZero();
     item.alive = true;
     item.toucher = null;
@@ -282,6 +284,7 @@ export class Debris {
     this.place(it, { a, r: R }, 1.9);
     const b = it.body, t = 0.75;
     const tx = target.position.x + rng.range(-0.3, 0.3), tz = target.position.z + rng.range(-0.3, 0.3);
+    b.wakeUp?.();
     b.velocity.set((tx - b.position.x) / t, (1.4 - b.position.y) / t + 0.5 * 14 * t, (tz - b.position.z) / t);
     b.angularVelocity.set(rng.range(-9, 9), rng.range(-9, 9), rng.range(-9, 9));
     it.toucher = 'crowd';

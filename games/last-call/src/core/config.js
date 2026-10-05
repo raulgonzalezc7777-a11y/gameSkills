@@ -75,7 +75,7 @@ export const BRAWL = {
   rootSpring: 90,          // how hard the hips chase the animation
   chestSpring: 45,         // keeps a sagging drunk from folding in half
   hiccup: 55,              // upward jolt of a hiccup, newton seconds
-  fallTilt: 0.8,          // chest tilt in radians that ends in a fall
+  fallTilt: 0.7,          // chest tilt in radians that ends in a fall
   hitImpulse: 11,         // impulse per point of damage on the part hit
   launchPerDamage: 0.42,   // whole-body velocity per point on heavy blows
   heavyHit: 9,            // damage above which a blow launches the body
@@ -91,6 +91,6 @@ export const QUALITY_PRESETS = {
   medium:    { pixelRatio: 1, shadowMapSize: 1024, ssao: true, ssr: true, motionBlur: false, dof: true, particleBudget: 6000, crowd: 120 },
   // Phones: a sharp picture (the screen is small and close to the eye) with
   // every fullscreen pass that costs a phone its frame rate turned off.
-  phone:     { pixelRatio: 1.5, shadowMapSize: 1024, ssao: false, ssr: false, motionBlur: false, dof: false, particleBudget: 3000, crowd: 70 },
-  low:       { pixelRatio: 0.75, shadowMapSize: 512,  ssao: false, ssr: false, motionBlur: false, dof: false, particleBudget: 2500, crowd: 24 }
+  phone:     { pixelRatio: 1.25, shadowMapSize: 512, ssao: false, ssr: false, motionBlur: false, dof: false, particleBudget: 2500, crowd: 40, lean: true, physicsIters: 8 },
+  low:       { lean: true, physicsIters: 7, bloom: false, pixelRatio: 0.75, shadowMapSize: 512,  ssao: false, ssr: false, motionBlur: false, dof: false, particleBudget: 2500, crowd: 24 }
 };

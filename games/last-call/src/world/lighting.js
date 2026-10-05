@@ -292,6 +292,24 @@ export class Lighting {
 
     this._buildHaze(room);
     this._buildDust(room, quality);
+    this.hemiBase = hemi.intensity;
+    this.setLean(!!quality.lean);
+  }
+
+  // Lean rig for phones: every dynamic light is paid per pixel, per frame,
+  // so phones keep the five that shape the picture (ambient, key, the two
+  // coloured rims, the back light) and lose the fill, the moving heads'
+  // lights and the neon accents. The beams stay: they are cheap geometry.
+  // No shadow maps either; the fighters' blob shadows carry the contact.
+  // Changing the light count recompiles shaders once, so this is a quality
+  // switch, not something to toggle every frame.
+  setLean(on) {
+    this.lean = on;
+    const cut = [this.rims[2]?.light, ...this.heads.map((h) => h.light), ...this.neonLights.map((n) => n.light)];
+    for (const l of cut) if (l) l.visible = !on;
+    this.key.castShadow = !on;
+    this.follow.castShadow = !on;
+    this.hemi.intensity = this.hemiBase * (on ? 1.35 : 1);
   }
 
   _buildHaze(room) {

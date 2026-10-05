@@ -1,4 +1,5 @@
 import * as CANNON from 'cannon-es';
+import { CFG } from '../core/config.js';
 
 // The physics world for the comedy brawl. One cannon-es world holds both
 // fighters' ragdolls, the floor, an invisible ring of crowd that bounces a
@@ -13,8 +14,12 @@ export class BrawlWorld {
   constructor(arena, opts = {}) {
     const w = new CANNON.World({ gravity: new CANNON.Vec3(0, opts.gravity ?? -14, 0) });
     w.broadphase = new CANNON.SAPBroadphase(w);
-    w.allowSleep = false;
-    w.solver.iterations = 14;
+    // Props at rest sleep (no solver work until something hits them); the
+    // fighters' bodies opt out in ragdoll.js because muscles drive them.
+    w.allowSleep = true;
+    // Fewer iterations on phones (quality.physicsIters): the ragdolls stay
+    // together at 8, and the solver is the biggest CPU cost in the game.
+    w.solver.iterations = CFG.render.physicsIters ?? 14;
     w.solver.tolerance = 0.0005;
     this.world = w;
 
@@ -30,22 +35,13 @@ export class BrawlWorld {
     floor.position.set(0, floorY, 0);
     w.addBody(floor);
 
-    // The ropes. A thick wall of boxes whose inner faces sit on the rope
-    // line: thick, so a body launched at knockout speed cannot tunnel through
-    // between two steps, and tall, so nothing sails over. Bouncy, so a body
-    // that hits them comes back into the fight like a wrestler off the ropes.
-    this.matRope = new CANNON.Material('rope');
-    w.addContactMaterial(new CANNON.ContactMaterial(this.matBody, this.matRope, { friction: 0.2, restitution: 0.55 }));
+    // The ropes. No physical wall: contain() below holds every body inside
+    // the rope line each step and bounces it back, which is exact (nothing
+    // can tunnel) and costs a few multiplies instead of thirty-two boxes in
+    // the collision tests. ropeBounce is the restitution (Cuerdas locas
+    // turns it up past 1).
     const R = arena?.ropeRadius ?? ((arena?.radius ?? 5.7) + 0.22);
-    const N = 32, T = 0.6;
-    for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2;
-      const b = new CANNON.Body({ mass: 0, material: this.matRope, collisionFilterGroup: GROUP.WORLD, collisionFilterMask: -1 });
-      b.addShape(new CANNON.Box(new CANNON.Vec3(T, 3, (Math.PI * (R + T)) / N + 0.1)));
-      b.position.set(Math.cos(a) * (R + T), floorY + 3, Math.sin(a) * (R + T));
-      b.quaternion.setFromEuler(0, -a, 0);
-      w.addBody(b);
-    }
+    this.ropeBounce = 0.55;
     this.ringRadius = R;
     this.ceiling = floorY + ((arena?.room?.h ?? 4.7) - 0.6);
     this.floorY = floorY;
@@ -69,7 +65,7 @@ export class BrawlWorld {
     const nx = p.x / r, nz = p.z / r;
     p.x = nx * lim; p.z = nz * lim;
     const v = body.velocity, vr = v.x * nx + v.z * nz;
-    if (vr > 0) { v.x -= 1.5 * vr * nx; v.z -= 1.5 * vr * nz; }
+    if (vr > 0) { const k = 1 + this.ropeBounce; v.x -= k * vr * nx; v.z -= k * vr * nz; }
     return Math.max(0, vr);
   }
 }

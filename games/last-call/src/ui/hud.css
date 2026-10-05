@@ -497,3 +497,4 @@ html,body{touch-action:none;overscroll-behavior:none;-webkit-touch-callout:none;
 .m-share .m-eyebrow{margin-top:0}
 .m-cap{margin:0 0 10px;font:400 18px/1.15 'Anton',sans-serif;letter-spacing:.02em}
 .m-share-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.touch-mode .toast{bottom:auto;top:calc(160px + env(safe-area-inset-top,0px))}

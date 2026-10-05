@@ -401,7 +401,7 @@ export class PostFX {
     // 8. Bloom: threshold once, then a mip chain down and back up. The upsample
     // adds into the larger level, so the result is one wide, soft halo instead
     // of six visible rings.
-    {
+    if (this.q.bloom !== false) {
       const pf = this.prefilterMat.uniforms;
       pf.tSource.value = colorRT.texture;
       pf.uTexel.value.set(1 / this.width, 1 / this.height);
@@ -436,7 +436,7 @@ export class PostFX {
       u.uNear.value = near; u.uFar.value = far;
       u.uTime.value = this._time;
       u.uExposure.value = this.params.exposure;
-      u.uBloomStrength.value = this.params.bloomStrength;
+      u.uBloomStrength.value = this.q.bloom === false ? 0 : this.params.bloomStrength;
       u.uDrunk.value = this.params.drunk;
       u.uFocus.value = this._focus;
       this._draw(this.presentMat, null);

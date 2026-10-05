@@ -18,9 +18,7 @@ export class Brawl {
     this.mods = new Set(mods || []);
     // Level rules that live in the physics (see meta/levels.js).
     this.launchMul = this.mods.has('cuerdasLocas') ? 1.5 : 1;
-    if (this.mods.has('cuerdasLocas')) {
-      for (const cm of this.physics.world.contactmaterials) if (cm.materials.includes(this.physics.matRope)) cm.restitution = 1.05;
-    }
+    if (this.mods.has('cuerdasLocas')) this.physics.ropeBounce = 1.05;
     if (this.mods.has('lunar')) this.physics.world.gravity.set(0, -6.5, 0);
     this.arena = arena;
     this.fighters = fighters;

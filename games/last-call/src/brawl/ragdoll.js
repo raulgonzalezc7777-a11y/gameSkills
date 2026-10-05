@@ -99,8 +99,18 @@ export class ActiveRagdoll {
         collisionFilterGroup: this.group,
         collisionFilterMask: GROUP.WORLD | other | GROUP.PROP
       });
-      body.addShape(new CANNON.Box(new CANNON.Vec3(hw, len * 0.5, hd)));
+      // A chain of spheres along the segment, not a box: box-against-box is
+      // the most expensive test cannon runs (it was over a fifth of the
+      // frame's CPU on a phone), sphere tests are cheap, and a limb of
+      // round links rolls and tumbles like one.
+      const r = Math.max(hw, hd);
+      const n = Math.max(1, Math.min(3, Math.round(len / (2 * r))));
+      for (let k = 0; k < n; k++) {
+        const y = n === 1 ? 0 : -len * 0.5 + r + ((len - 2 * r) * k) / (n - 1);
+        body.addShape(new CANNON.Sphere(r), new CANNON.Vec3(0, y, 0));
+      }
       body.fighter = this.f;
+      body.allowSleep = false;
       body.position.set(centre.x, centre.y, centre.z);
       body.quaternion.set(q.x, q.y, q.z, q.w);
       w.addBody(body);
@@ -169,6 +179,9 @@ export class ActiveRagdoll {
       const bone = this.bones[s.bone];
       const b = s.body;
       _q.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w).multiply(s.offQ);
+      // Only the chain above this bone has to be current; refreshing whole
+      // subtrees for each of twelve segments cost more than the pose itself.
+      bone.parent.updateWorldMatrix(true, false);
       bone.parent.matrixWorld.decompose(_a, _q2, _s);
       bone.quaternion.copy(_q2.invert().multiply(_q));
       if (s.name === 'pelvis') {
@@ -177,7 +190,7 @@ export class ActiveRagdoll {
         _m.copy(bone.parent.matrixWorld).invert();
         bone.position.copy(_c.applyMatrix4(_m));
       }
-      bone.updateMatrixWorld(true);
+      bone.updateWorldMatrix(false, false);
     }
   }
 

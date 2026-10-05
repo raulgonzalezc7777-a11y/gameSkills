@@ -119,6 +119,10 @@ audio.setListener(camera);
 // never stuck with a preset chosen for a desktop card.
 const QUALITY_ORDER = isTouch ? ['low', 'phone', 'medium', 'high', 'cinematic'] : ['low', 'medium', 'high', 'cinematic'];
 let qualityName = bootName;
+// Dynamic resolution: a multiplier on the preset's pixel ratio that the
+// frame-rate governor in the loop moves between 0.55 and 1.
+let resScale = 1;
+let basePixelRatio = 1;
 const autoQuality = !qsBoot.has('q');
 
 function applyQuality(name) {
@@ -129,8 +133,15 @@ function applyQuality(name) {
   post.q.ssr = q.ssr && !off.has('ssr');
   post.q.dof = q.dof && !off.has('dof');
   post.q.motionBlur = q.motionBlur && !off.has('mb');
+  post.q.bloom = q.bloom !== false && !off.has('bloom');
+  basePixelRatio = q.pixelRatio ?? 1;
   CFG.render.maxPixelRatio = q.pixelRatio ?? 1;
+  CFG.render.physicsIters = q.physicsIters ?? 14;
+  if (match.brawl) match.brawl.physics.world.solver.iterations = CFG.render.physicsIters;
+  match.arena.lighting?.setLean?.(!!q.lean);
+  resScale = 1;
   onResize();
+  basePixelRatio = q.pixelRatio ?? 1;
   hud.setQuality?.(name, autoQuality);
 }
 window.__setQuality = applyQuality;
@@ -159,6 +170,9 @@ function onResize() {
   post.setSize(w, h);
 }
 window.addEventListener('resize', onResize);
+// Compile every shader now, off the critical path where the browser allows
+// it, so the first punch, spark or replay does not stall a frame on a phone.
+setTimeout(() => { try { (renderer.compileAsync?.(scene, camera) ?? Promise.resolve(renderer.compile(scene, camera))).catch(() => {}); } catch { /* compiled lazily instead */ } }, 0);
 onResize();
 applyQuality(qualityName);
 
@@ -350,7 +364,7 @@ input.attach();
 // 60 Hz makes the whole game framerate independent, which is also what any
 // deterministic replay would need.
 const FIXED_DT = 1 / 60;
-const MAX_STEPS = 4;          // beyond this, drop the backlog rather than spiral
+const MAX_STEPS = 2;          // beyond this, drop the backlog rather than spiral
 let accumulator = 0;
 
 function frame(nowMs) {
@@ -404,11 +418,23 @@ function frame(nowMs) {
   // a preset explicitly, which is how the capture harness stays deterministic.
   if (autoQuality && autoPicked && started) {
     autoAcc += time.rawDt; autoFrames++;
-    if (autoAcc >= 3.5) {
+    if (autoAcc >= 1.5) {
       const fps = autoFrames / autoAcc;
       autoAcc = 0; autoFrames = 0;
-      const i = QUALITY_ORDER.indexOf(qualityName);
-      if (fps < 38 && i > 0) applyQuality(QUALITY_ORDER[i - 1]);
+      // First lever: resolution, in small steps, both ways. Only when that
+      // is spent does the preset itself step down (lights, effects).
+      let next = resScale;
+      if (fps < 45) next = Math.max(0.55, resScale * 0.85);
+      else if (fps > 57 && resScale < 1) next = Math.min(1, resScale * 1.08);
+      if (Math.abs(next - resScale) > 0.01) {
+        resScale = next;
+        // Never below 0.65 CSS pixels: past that a phone screen turns to mush.
+        CFG.render.maxPixelRatio = Math.max(0.65, basePixelRatio * resScale);
+        onResize();
+      } else if (fps < 30 && resScale <= 0.56) {
+        const i = QUALITY_ORDER.indexOf(qualityName);
+        if (i > 0) applyQuality(QUALITY_ORDER[i - 1]);
+      }
     }
   }
 
